@@ -1,6 +1,7 @@
 package pages_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/edgetools/memento/pages"
@@ -69,8 +70,7 @@ func TestParse(t *testing.T) {
 	t.Run("body_excludes_title", func(t *testing.T) {
 		t.Parallel()
 		p := pages.Parse("crowd control", []byte("# Crowd Control\n\nBody text here."))
-		assert.NotContains(t, p.Body, "# Crowd Control")
-		assert.Contains(t, p.Body, "Body text here.")
+		assert.Equal(t, "Body text here.", p.Body)
 	})
 
 	t.Run("h2_not_treated_as_title", func(t *testing.T) {
@@ -100,6 +100,6 @@ func TestParse(t *testing.T) {
 		p := pages.Parse("my page", []byte(content))
 		assert.Equal(t, "My Page", p.Title)
 		assert.ElementsMatch(t, []string{"Link One", "Link Two"}, p.WikiLinks)
-		assert.Greater(t, p.Lines, 0)
+		assert.Equal(t, strings.Count(content, "\n")+1, p.Lines)
 	})
 }

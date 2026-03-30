@@ -6,6 +6,7 @@ import (
 
 	"github.com/edgetools/memento/pages"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNormalize(t *testing.T) {
@@ -50,38 +51,50 @@ func TestNameToFilename(t *testing.T) {
 			assert.Equal(t, tc.want, pages.NameToFilename(tc.input))
 		})
 	}
-}
 
-func TestNameToFilename_LongNameTruncated(t *testing.T) {
-	t.Parallel()
-	long := strings.Repeat("a", 300)
-	result := pages.NameToFilename(long)
-	assert.LessOrEqual(t, len(result), 204)
-	assert.True(t, strings.HasSuffix(result, ".md"))
-}
+	t.Run("long_name_truncated", func(t *testing.T) {
+		t.Parallel()
+		long := strings.Repeat("a", 300)
+		result := pages.NameToFilename(long)
+		assert.LessOrEqual(t, len([]rune(result)), 204)
+		assert.True(t, strings.HasSuffix(result, ".md"))
+	})
 
-func TestNameToFilename_Roundtrip(t *testing.T) {
-	t.Parallel()
-	names := []string{
-		"Crowd Control",
-		"Enchanter",
-		"Aggro From Healing",
-		"Simple Page",
-	}
-	for _, name := range names {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			filename := pages.NameToFilename(name)
-			recovered := pages.FilenameToName(filename)
-			// Recovered name should normalize to the same as the original
-			assert.Equal(t, pages.Normalize(name), pages.Normalize(recovered))
-		})
-	}
+	t.Run("long_name_truncated_unicode", func(t *testing.T) {
+		t.Parallel()
+		// "Ü" is 2 bytes; 300 runes ensures the multi-byte path is exercised.
+		long := strings.Repeat("Ü", 300)
+		result := pages.NameToFilename(long)
+		assert.LessOrEqual(t, len([]rune(result)), 204)
+		assert.True(t, strings.HasSuffix(result, ".md"))
+	})
+
+	t.Run("roundtrip", func(t *testing.T) {
+		t.Parallel()
+		names := []string{
+			"Crowd Control",
+			"Enchanter",
+			"Aggro From Healing",
+			"Simple Page",
+		}
+		for _, name := range names {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				filename := pages.NameToFilename(name)
+				recovered := pages.FilenameToName(filename)
+				// Recovered name should normalize to the same as the original
+				require.Equal(t, pages.Normalize(name), pages.Normalize(recovered))
+			})
+		}
+	})
 }
 
 func TestFilenameToName(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "crowd control", pages.FilenameToName("crowd-control.md"))
+	t.Run("simple", func(t *testing.T) {
+		t.Parallel()
+		assert.Equal(t, "crowd control", pages.FilenameToName("crowd-control.md"))
+	})
 }
 
 func TestNamesMatch(t *testing.T) {
