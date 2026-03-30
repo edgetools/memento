@@ -22,6 +22,7 @@ func TestParse(t *testing.T) {
 		t.Parallel()
 		p := pages.Parse("crowd control", []byte("Just body text, no heading."))
 		assert.Equal(t, "crowd control", p.Title)
+		assert.Equal(t, "Just body text, no heading.", p.Body)
 	})
 
 	t.Run("extracts_single_wikilink", func(t *testing.T) {
@@ -92,6 +93,7 @@ func TestParse(t *testing.T) {
 		assert.Equal(t, "test", p.Title)
 		assert.Empty(t, p.WikiLinks)
 		assert.Empty(t, p.Body)
+		assert.Equal(t, 0, p.Lines)
 	})
 
 	t.Run("multiline", func(t *testing.T) {
