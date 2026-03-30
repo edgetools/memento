@@ -128,6 +128,11 @@ func TestWrite(t *testing.T) {
 		raw := readTestPage(t, dir, "foo")
 		assert.Contains(t, raw, "Second version.")
 		assert.NotContains(t, raw, "First version.")
+		// The heading should reflect the name passed to the most recent Write call.
+		assert.True(t,
+			strings.HasPrefix(raw, "# foo\n"),
+			"heading should use the name from the second Write call, got: %q", raw,
+		)
 	})
 
 	t.Run("returns_parsed_page", func(t *testing.T) {
@@ -228,6 +233,26 @@ func TestLoad(t *testing.T) {
 		assert.Contains(t, p.Body, "The enchanter uses")
 		assert.Greater(t, p.Lines, 0)
 	})
+
+	t.Run("reads_externally_created_file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		s := pages.NewStore(dir)
+
+		// Write the file directly, bypassing the store's heading management,
+		// to simulate pre-existing content in the content directory.
+		writeTestPage(t, dir, "Crowd Control", "# Crowd Control\n\nBody with [[Enchanter]] link.")
+
+		p, err := s.Load("Crowd Control")
+		require.NoError(t, err)
+
+		// Name must come from the heading in the file, not from filename mapping
+		// (FilenameToName would produce lowercase "crowd control").
+		assert.Equal(t, "Crowd Control", p.Name)
+		assert.Equal(t, "Crowd Control", p.Title)
+		assert.Contains(t, p.Body, "Body with")
+		assert.ElementsMatch(t, []string{"Enchanter"}, p.WikiLinks)
+	})
 }
 
 // ---- Delete ---------------------------------------------------------------
@@ -273,6 +298,7 @@ func TestDelete(t *testing.T) {
 
 		err := s.Delete("Nonexistent Page")
 		require.Error(t, err)
+		assert.Contains(t, err.Error(), "Nonexistent Page")
 	})
 }
 
@@ -377,6 +403,7 @@ func TestRename(t *testing.T) {
 
 		err := s.Rename("Nonexistent", "New Name")
 		require.Error(t, err)
+		assert.Contains(t, err.Error(), "Nonexistent")
 	})
 }
 
@@ -399,8 +426,24 @@ func TestScan(t *testing.T) {
 
 		result := s.Scan()
 		require.Len(t, result, 3)
-		// Names should reflect canonical casing from the headings.
+		// Names must be derived from the H1 heading in each file, not from
+		// filename mapping (FilenameToName produces lowercase "page one", etc.).
 		assert.ElementsMatch(t, []string{"Page One", "Page Two", "Page Three"}, pageNames(result))
+	})
+
+	t.Run("reads_externally_created_pages", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		s := pages.NewStore(dir)
+
+		// Simulate files that pre-exist in the content dir (not written by the store).
+		writeTestPage(t, dir, "Crowd Control", "# Crowd Control\n\nContent with [[Enchanter]].")
+		writeTestPage(t, dir, "Enchanter", "# Enchanter\n\nA utility class.")
+
+		result := s.Scan()
+		require.Len(t, result, 2)
+		// Canonical names must come from the headings, not filename conversion.
+		assert.ElementsMatch(t, []string{"Crowd Control", "Enchanter"}, pageNames(result))
 	})
 
 	t.Run("empty_dir", func(t *testing.T) {
