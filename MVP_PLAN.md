@@ -10,6 +10,10 @@ Module: `github.com/edgetools/memento` | Primary dep: `github.com/mark3labs/mcp-
 
 ## Test Strategy
 
+**BEFORE WRITING ANY IMPLEMENTATION CODE (go source files that don't end in _test.go), ALL TEST IMPLEMENTATIONS (in the go source files that end in _test.go) MUST BE COMPLETE SPEFICIATIONS THAT FULLY TEST THE BEHAVIOR**
+
+When writing tests, think of yourself as an engineer whose job is to write complete tests that will satisfy the goals of the spec, and that you'll be handing off those fully implemented tests to another engineer who will then make those tests pass, but who won't modify the tests.
+
 **Three tiers, no mocks:**
 
 1. **Unit tests** (`pages_test`, `index_test`) -- black-box tests of each package's public API using `t.TempDir()` for filesystem, hand-constructed data for indexing
