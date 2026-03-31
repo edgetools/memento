@@ -51,12 +51,12 @@
 - [x] Write `write_page` tests (failing)
 - [x] Write `get_page` tests (failing)
 - [x] Write `delete_page` tests (failing)
-- [ ] Implement `tools/tools.go` (shared wiring)
-- [ ] Implement `tools/write_page.go`
-- [ ] Implement `tools/get_page.go`
-- [ ] Implement `tools/delete_page.go`
-- [ ] `go test ./tools/...` — all pass
-- [ ] `go vet ./tools/...` — clean
+- [x] Implement `tools/tools.go` (shared wiring)
+- [x] Implement `tools/write_page.go`
+- [x] Implement `tools/get_page.go`
+- [x] Implement `tools/delete_page.go`
+- [x] `go test ./tools/...` — all pass
+- [x] `go vet ./tools/...` — clean
 
 ---
 
