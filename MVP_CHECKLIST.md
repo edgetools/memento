@@ -47,10 +47,10 @@
 
 ## D5: Tools — write_page, get_page, delete_page
 
-- [ ] Write `tools/tools_test.go` with helpers (`setupTestServer`, `callTool`, etc.) (failing)
-- [ ] Write `write_page` tests (failing)
-- [ ] Write `get_page` tests (failing)
-- [ ] Write `delete_page` tests (failing)
+- [x] Write `tools/tools_test.go` with helpers (`setupTestServer`, `callTool`, etc.) (failing)
+- [x] Write `write_page` tests (failing)
+- [x] Write `get_page` tests (failing)
+- [x] Write `delete_page` tests (failing)
 - [ ] Implement `tools/tools.go` (shared wiring)
 - [ ] Implement `tools/write_page.go`
 - [ ] Implement `tools/get_page.go`
