@@ -11,7 +11,7 @@ import (
 )
 
 // makePage constructs a pages.Page without touching the filesystem.
-// Shared across bm25_test.go and trigram_test.go (same package index_test).
+// Shared across all index_test files (bm25_test.go, trigram_test.go, graph_test.go, index_test.go).
 func makePage(name, body string, links []string) pages.Page {
 	return pages.Page{
 		Name:      name,
