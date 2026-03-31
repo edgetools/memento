@@ -166,7 +166,12 @@ func (b *BM25) Search(query string, limit int) []SearchResult {
 	if len(terms) == 0 {
 		return nil
 	}
+	return b.searchTerms(terms, limit)
+}
 
+// searchTerms scores documents for the given pre-stemmed terms and returns ranked results.
+// This is the internal implementation used by both Search and the composite Index.
+func (b *BM25) searchTerms(terms []string, limit int) []SearchResult {
 	N := len(b.docs)
 	if N == 0 {
 		return nil
@@ -183,8 +188,7 @@ func (b *BM25) Search(query string, limit int) []SearchResult {
 		if df == 0 {
 			continue
 		}
-		idf := math.Log(float64(N-df)+0.5/float64(df)+0.5+1) // simplified; use standard formula
-		idf = math.Log((float64(N-df)+0.5)/(float64(df)+0.5) + 1)
+		idf := math.Log((float64(N-df)+0.5)/(float64(df)+0.5) + 1)
 
 		for _, entry := range b.docs {
 			score := 0.0

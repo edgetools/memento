@@ -38,10 +38,10 @@
 
 - [x] Write `index/graph_test.go` (failing)
 - [x] Write `index/index_test.go` (failing)
-- [ ] Implement `index/graph.go`
-- [ ] Implement `index/index.go`
-- [ ] `go test ./index/...` — all pass
-- [ ] `go vet ./index/...` — clean
+- [x] Implement `index/graph.go`
+- [x] Implement `index/index.go`
+- [x] `go test ./index/...` — all pass
+- [x] `go vet ./index/...` — clean
 
 ---
 
