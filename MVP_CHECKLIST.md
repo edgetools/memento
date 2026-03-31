@@ -16,21 +16,21 @@
 
 ## D2: Pages Store
 
-- [ ] Write `pages/store_test.go` (failing)
-- [ ] Implement `pages/store.go` (`NewStore`, `Write`, `Load`, `Delete`, `Rename`, `Scan`, `Exists`)
-- [ ] `go test ./pages/...` — all pass
-- [ ] `go vet ./pages/...` — clean
+- [x] Write `pages/store_test.go` (failing)
+- [x] Implement `pages/store.go` (`NewStore`, `Write`, `Load`, `Delete`, `Rename`, `Scan`, `Exists`)
+- [x] `go test ./pages/...` — all pass
+- [x] `go vet ./pages/...` — clean
 
 ---
 
 ## D3: Index BM25 + Trigram *(parallel with D2)*
 
-- [ ] Write `index/bm25_test.go` (failing)
-- [ ] Write `index/trigram_test.go` (failing)
-- [ ] Implement `index/bm25.go`
-- [ ] Implement `index/trigram.go`
-- [ ] `go test ./index/...` — all pass
-- [ ] `go vet ./index/...` — clean
+- [x] Write `index/bm25_test.go` (failing)
+- [x] Write `index/trigram_test.go` (failing)
+- [x] Implement `index/bm25.go`
+- [x] Implement `index/trigram.go`
+- [x] `go test ./index/...` — all pass
+- [x] `go vet ./index/...` — clean
 
 ---
 
