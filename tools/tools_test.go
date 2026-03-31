@@ -123,6 +123,25 @@ func multilineContent(n int) string {
 	return strings.Join(lines, "\n")
 }
 
+// getPageFull fetches the full content of a named page (no lines parameter)
+// and returns the parsed response. Fails the test on any error.
+func getPageFull(t *testing.T, c *client.Client, pageName string) getPageFullResp {
+	t.Helper()
+	result := callTool(t, c, "get_page", map[string]any{"page": pageName})
+	var resp getPageFullResp
+	parseJSON(t, result, &resp)
+	return resp
+}
+
+// getStoredLines fetches the full content of a named page and returns it as a
+// slice of lines. The slice is 0-indexed: getStoredLines(...)[0] is line 1 of
+// the stored file (the managed heading), getStoredLines(...)[n-1] is line n.
+func getStoredLines(t *testing.T, c *client.Client, pageName string) []string {
+	t.Helper()
+	resp := getPageFull(t, c, pageName)
+	return strings.Split(resp.Content, "\n")
+}
+
 // ---- TestWritePage ---------------------------------------------------------
 
 func TestWritePage(t *testing.T) {
@@ -138,6 +157,11 @@ func TestWritePage(t *testing.T) {
 		})
 
 		assert.True(t, store.Exists("Enchanter"), "page should exist in the store after write")
+
+		// Verify the content is retrievable and matches what was written.
+		resp := getPageFull(t, c, "Enchanter")
+		assert.Equal(t, "Enchanter", resp.Page)
+		assert.Contains(t, resp.Content, "The enchanter is a utility class.")
 	})
 
 	t.Run("returns_links_to", func(t *testing.T) {
@@ -348,6 +372,8 @@ func TestGetPage(t *testing.T) {
 			"content": multilineContent(20),
 		})
 
+		allLines := getStoredLines(t, c, "Range Test")
+
 		result := callTool(t, c, "get_page", map[string]any{
 			"page":  "Range Test",
 			"lines": []string{"3-5"},
@@ -357,7 +383,7 @@ func TestGetPage(t *testing.T) {
 		parseJSON(t, result, &resp)
 		require.Len(t, resp.Sections, 1, "one range should produce one section")
 		assert.Equal(t, "3-5", resp.Sections[0].Lines)
-		assert.NotEmpty(t, resp.Sections[0].Content)
+		assert.Equal(t, strings.Join(allLines[2:5], "\n"), resp.Sections[0].Content)
 		assert.Greater(t, resp.TotalLines, 0)
 	})
 
@@ -370,6 +396,8 @@ func TestGetPage(t *testing.T) {
 			"content": multilineContent(25),
 		})
 
+		allLines := getStoredLines(t, c, "Multi Range Test")
+
 		result := callTool(t, c, "get_page", map[string]any{
 			"page":  "Multi Range Test",
 			"lines": []string{"1-3", "8-10"},
@@ -380,8 +408,8 @@ func TestGetPage(t *testing.T) {
 		require.Len(t, resp.Sections, 2, "two ranges should produce two sections")
 		assert.Equal(t, "1-3", resp.Sections[0].Lines)
 		assert.Equal(t, "8-10", resp.Sections[1].Lines)
-		assert.NotEmpty(t, resp.Sections[0].Content)
-		assert.NotEmpty(t, resp.Sections[1].Content)
+		assert.Equal(t, strings.Join(allLines[0:3], "\n"), resp.Sections[0].Content)
+		assert.Equal(t, strings.Join(allLines[7:10], "\n"), resp.Sections[1].Content)
 	})
 
 	t.Run("line_range_single_line", func(t *testing.T) {
@@ -393,6 +421,8 @@ func TestGetPage(t *testing.T) {
 			"content": multilineContent(10),
 		})
 
+		allLines := getStoredLines(t, c, "Single Line Test")
+
 		result := callTool(t, c, "get_page", map[string]any{
 			"page":  "Single Line Test",
 			"lines": []string{"4"},
@@ -402,7 +432,7 @@ func TestGetPage(t *testing.T) {
 		parseJSON(t, result, &resp)
 		require.Len(t, resp.Sections, 1)
 		assert.Equal(t, "4", resp.Sections[0].Lines)
-		assert.NotEmpty(t, resp.Sections[0].Content)
+		assert.Equal(t, allLines[3], resp.Sections[0].Content)
 	})
 
 	t.Run("line_range_out_of_bounds", func(t *testing.T) {
