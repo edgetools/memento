@@ -128,12 +128,14 @@ func TestSearch(t *testing.T) {
 		t.Parallel()
 		c, _, _ := setupTestServer(t)
 
-		// Strong match: title IS the search term.
+		// Strong body match: "enchanter" appears 3× in a focused page (no title match).
+		// BM25 TF saturation means 3× gives roughly 1.5× the score of 1× at similar lengths,
+		// keeping both pages within the 50% relevance threshold of each other.
 		callTool(t, c, "write_page", map[string]any{
-			"page":    "Enchanter",
-			"content": "The enchanter class handles crowd control through mez.",
+			"page":    "CC Roles",
+			"content": "The enchanter is the primary CC class. Enchanter handles mez. An enchanter controls casters.",
 		})
-		// Weak match: term appears once in body of an unrelated page.
+		// Weak body match: "enchanter" appears once in an unrelated page (no title match).
 		callTool(t, c, "write_page", map[string]any{
 			"page":    "General Notes",
 			"content": "Various game notes. An enchanter was briefly seen.",
@@ -145,13 +147,13 @@ func TestSearch(t *testing.T) {
 
 		require.GreaterOrEqual(t, len(resp.Results), 2, "both pages should appear in results")
 
-		enchResult := findSearchResult(resp.Results, "Enchanter")
+		ccResult := findSearchResult(resp.Results, "CC Roles")
 		notesResult := findSearchResult(resp.Results, "General Notes")
-		require.NotNil(t, enchResult, "Enchanter must appear in results")
+		require.NotNil(t, ccResult, "CC Roles must appear in results")
 		require.NotNil(t, notesResult, "General Notes must appear in results")
 
-		assert.Greater(t, enchResult.Relevance, notesResult.Relevance,
-			"title match must have higher relevance than a single body mention")
+		assert.Greater(t, ccResult.Relevance, notesResult.Relevance,
+			"page with more term occurrences must have higher relevance than a single body mention")
 
 		// Results must be in descending relevance order.
 		for i := 1; i < len(resp.Results); i++ {
