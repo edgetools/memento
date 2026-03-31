@@ -62,9 +62,9 @@
 
 ## D6: Tools — patch_page, rename_page, search
 
-- [ ] Write `patch_page` tests (failing)
-- [ ] Write `rename_page` tests (failing)
-- [ ] Write `search` tests (failing)
+- [x] Write `patch_page` tests (failing)
+- [x] Write `rename_page` tests (failing)
+- [x] Write `search` tests (failing)
 - [ ] Implement `tools/patch_page.go`
 - [ ] Implement `tools/rename_page.go`
 - [ ] Implement `tools/search.go`
