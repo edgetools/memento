@@ -439,16 +439,18 @@ func TestPatchPage(t *testing.T) {
 		assert.Less(t, middleIdx, newBIdx, "Middle separator must appear before New Block B")
 	})
 
-	t.Run("page_not_found", func(t *testing.T) {
+	t.Run("replace_page_not_found", func(t *testing.T) {
 		t.Parallel()
 		c, _, _ := setupTestServer(t)
 
+		// replace is an existence-dependent op: the page must already exist.
 		callToolExpectError(t, c, "patch_page", map[string]any{
 			"page": "This Page Does Not Exist",
 			"operations": []map[string]any{
 				{
-					"op":      "append",
-					"content": "some content",
+					"op":  "replace",
+					"old": "some text",
+					"new": "replacement",
 				},
 			},
 		})

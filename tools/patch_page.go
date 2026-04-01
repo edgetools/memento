@@ -72,10 +72,32 @@ func registerPatchPage(s *server.MCPServer, store *pages.Store, idx *index.Index
 			ops = append(ops, op)
 		}
 
-		// Load the page.
-		p, err := store.Load(pageName)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+		// Load the page, or create it on-demand for append/prepend operations.
+		var p pages.Page
+		if !store.Exists(pageName) {
+			// Check whether all operations are create-capable (append/prepend).
+			// If any existence-dependent operation (replace, replace_lines) is
+			// present, fail atomically without creating the page.
+			for i, op := range ops {
+				switch op.Op {
+				case "append", "prepend":
+					// create-capable, ok
+				case "replace", "replace_lines":
+					return mcp.NewToolResultError(fmt.Sprintf("operation %d: page %q not found", i, pageName)), nil
+				}
+			}
+			// All ops are create-capable: create the page with an empty body.
+			created, err := store.Write(pageName, "")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			p = created
+		} else {
+			loaded, err := store.Load(pageName)
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			p = loaded
 		}
 
 		// Build full content string for editing (heading + body).
