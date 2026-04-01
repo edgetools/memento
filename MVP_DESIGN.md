@@ -402,14 +402,23 @@ replacement targets specific line ranges identified from prior `search` or
 **Supported operations:**
 
 - **`replace`**: find `old` text (must match exactly and uniquely), replace with
-  `new` text. Fails if `old` is not found or appears more than once.
+  `new` text. Fails if `old` is not found or appears more than once. Requires
+  the page to already exist.
 - **`replace_lines`**: replace the content at `lines` (a range like `"45-52"` or
   a single line like `"45"`) with `new` text. The replacement content can be
   shorter or longer than the original range. All line numbers in a single call
   refer to the page as it exists *before* any operations are applied; the MCP
-  computes the necessary offsets internally.
-- **`append`**: add `content` to the end of the page.
-- **`prepend`**: add `content` to the beginning of the page body.
+  computes the necessary offsets internally. Requires the page to already exist.
+- **`append`**: add `content` to the end of the page. **Creates the page if it
+  doesn't exist** (the MCP generates the page heading automatically).
+- **`prepend`**: add `content` to the beginning of the page body. **Creates the
+  page if it doesn't exist.**
+
+This create-on-write behavior for `append` and `prepend` is key to the "jot it
+down and move on" workflow. The agent doesn't need to search for or check whether
+a page exists before appending a note. If the page is there, the note is added.
+If it's not, the page is created with just the note. Cleanup and consolidation
+happen in separate maintenance sessions.
 
 Operations are applied in order. If any operation fails, none are applied
 (atomic). The in-memory index is updated after a successful patch.
@@ -720,6 +729,16 @@ page that linked to the old name. That's error-prone and the agent might miss
 references. Since the MCP has the full link graph in memory, it can atomically rename
 the page and update all references in a single operation (and a single git commit
 with `--auto-commit`).
+
+**Why does `append`/`prepend` create pages that don't exist?**
+The brain has two modes: accumulation (jotting notes during a session) and
+consolidation (cleaning up and reorganizing). During accumulation, the agent
+shouldn't need to search for a page or check if it exists before writing a note.
+`patch_page` with `append` is the "fire and forget" write tool: if the page
+exists, the note is added; if it doesn't, the page is created. This keeps the
+jotting workflow to a single tool call with no preconditions. `replace` and
+`replace_lines` still require the page to exist because they reference specific
+content that must be present.
 
 **Why separate `write_page` and `patch_page`?**
 `write_page` is for creating new pages or fully rewriting existing ones when the
