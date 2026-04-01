@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/edgetools/memento/index"
 	"github.com/edgetools/memento/pages"
@@ -10,7 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-func registerWritePage(s *server.MCPServer, store *pages.Store, idx *index.Index) {
+func registerWritePage(s *server.MCPServer, store *pages.Store, idx *index.Index, ac *autoCommitter) {
 	tool := mcp.NewTool("write_page",
 		mcp.WithDescription("Creates a new page or fully replaces an existing page's content."),
 		mcp.WithString("page",
@@ -68,6 +69,10 @@ func registerWritePage(s *server.MCPServer, store *pages.Store, idx *index.Index
 		if err != nil {
 			return mcp.NewToolResultError("internal error marshaling response: " + err.Error()), nil
 		}
+		if ac != nil {
+			_ = ac.commit(fmt.Sprintf("memento: updated %q", p.Name))
+		}
+
 		return mcp.NewToolResultText(string(data)), nil
 	})
 }

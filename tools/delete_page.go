@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/edgetools/memento/index"
 	"github.com/edgetools/memento/pages"
@@ -10,7 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-func registerDeletePage(s *server.MCPServer, store *pages.Store, idx *index.Index) {
+func registerDeletePage(s *server.MCPServer, store *pages.Store, idx *index.Index, ac *autoCommitter) {
 	tool := mcp.NewTool("delete_page",
 		mcp.WithDescription("Removes a page from the brain."),
 		mcp.WithString("page",
@@ -53,6 +54,9 @@ func registerDeletePage(s *server.MCPServer, store *pages.Store, idx *index.Inde
 		data, err := json.Marshal(resp)
 		if err != nil {
 			return mcp.NewToolResultError("internal error marshaling response: " + err.Error()), nil
+		}
+		if ac != nil {
+			_ = ac.commit(fmt.Sprintf("memento: deleted %q", canonicalName))
 		}
 		return mcp.NewToolResultText(string(data)), nil
 	})

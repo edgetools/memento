@@ -65,20 +65,20 @@
 - [x] Write `patch_page` tests (failing)
 - [x] Write `rename_page` tests (failing)
 - [x] Write `search` tests (failing)
-- [ ] Implement `tools/patch_page.go`
-- [ ] Implement `tools/rename_page.go`
-- [ ] Implement `tools/search.go`
-- [ ] `go test ./tools/...` — all pass
-- [ ] `go vet ./tools/...` — clean
+- [x] Implement `tools/patch_page.go`
+- [x] Implement `tools/rename_page.go`
+- [x] Implement `tools/search.go`
+- [x] `go test ./tools/...` — all pass
+- [x] `go vet ./tools/...` — clean
 
 ---
 
 ## D7: main.go + Auto-Commit
 
-- [ ] Write auto-commit tests in `tools/tools_test.go` (failing)
-- [ ] Implement `main.go` (flag parsing, store+index wiring, `server.ServeStdio`)
-- [ ] `go test ./...` — all pass
-- [ ] `go vet ./...` — clean
-- [ ] Build binary: `go build -o memento .`
+- [x] Write auto-commit tests in `tools/autocommit_test.go` (failing — `tools.RegisterAutoCommit` undefined)
+- [x] Implement `main.go` (flag parsing, store+index wiring, `server.ServeStdio`)
+- [x] `go test ./...` — all pass
+- [x] `go vet ./...` — clean
+- [x] Build binary: `go build -o memento .`
 - [ ] End-to-end smoke test with MCP client
 - [ ] Verify git commits created for write operations
