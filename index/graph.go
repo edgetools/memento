@@ -8,17 +8,19 @@ import (
 
 // Graph is a bidirectional wikilink graph.
 type Graph struct {
-	outbound  map[string]map[string]bool // normalized source → set of normalized targets
-	inbound   map[string]map[string]bool // normalized target → set of normalized referrers
-	canonical map[string]string          // normalized name → canonical display name
+	outbound      map[string]map[string]bool // normalized source → set of normalized targets
+	outboundOrder map[string][]string        // normalized source → ordered normalized targets (insertion order)
+	inbound       map[string]map[string]bool // normalized target → set of normalized referrers
+	canonical     map[string]string          // normalized name → canonical display name
 }
 
 // NewGraph creates an empty Graph.
 func NewGraph() *Graph {
 	return &Graph{
-		outbound:  make(map[string]map[string]bool),
-		inbound:   make(map[string]map[string]bool),
-		canonical: make(map[string]string),
+		outbound:      make(map[string]map[string]bool),
+		outboundOrder: make(map[string][]string),
+		inbound:       make(map[string]map[string]bool),
+		canonical:     make(map[string]string),
 	}
 }
 
@@ -41,20 +43,25 @@ func (g *Graph) Add(page pages.Page) {
 		}
 	}
 
-	// Build new outbound set, deduplicating targets.
+	// Build new outbound set and ordered slice, deduplicating targets.
 	newOut := make(map[string]bool)
+	newOrder := make([]string, 0, len(page.WikiLinks))
 	for _, link := range page.WikiLinks {
 		tNorm := normalizePageName(link)
 		if tNorm == "" {
 			continue
 		}
-		newOut[tNorm] = true
+		if !newOut[tNorm] {
+			newOut[tNorm] = true
+			newOrder = append(newOrder, tNorm)
+		}
 		// Record the canonical name for this target (first-seen wins).
 		if _, exists := g.canonical[tNorm]; !exists {
 			g.canonical[tNorm] = link
 		}
 	}
 	g.outbound[key] = newOut
+	g.outboundOrder[key] = newOrder
 
 	// Update inbound refs for each target.
 	for tNorm := range newOut {
@@ -76,18 +83,20 @@ func (g *Graph) Remove(name string) {
 		}
 		delete(g.outbound, key)
 	}
+	delete(g.outboundOrder, key)
 	delete(g.canonical, key)
 }
 
-// LinksTo returns the canonical names of pages that the given page links to.
+// LinksTo returns the canonical names of pages that the given page links to,
+// in the order the links appear in the page source.
 func (g *Graph) LinksTo(name string) []string {
 	key := normalizePageName(name)
-	out := g.outbound[key]
-	if len(out) == 0 {
+	order := g.outboundOrder[key]
+	if len(order) == 0 {
 		return nil
 	}
-	result := make([]string, 0, len(out))
-	for tNorm := range out {
+	result := make([]string, 0, len(order))
+	for _, tNorm := range order {
 		if canon, ok := g.canonical[tNorm]; ok {
 			result = append(result, canon)
 		} else {

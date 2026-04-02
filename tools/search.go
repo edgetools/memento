@@ -109,13 +109,6 @@ func registerSearch(s *server.MCPServer, store *pages.Store, idx *index.Index) {
 			return true
 		}
 
-		// Add graph-boosted (non-direct) results to linkedPageDetails.
-		for _, r := range rawResults {
-			if !r.IsDirect {
-				addLinkedDetail(r.Page, r.Snippet, r.Line)
-			}
-		}
-
 		results := make([]resultEntry, 0, len(directResults))
 		tokenCount := 0
 
@@ -192,6 +185,14 @@ func registerSearch(s *server.MCPServer, store *pages.Store, idx *index.Index) {
 				linkedPageDetails = append(linkedPageDetails, d)
 			}
 			results = append(results, entry)
+		}
+
+		// Mop up: add any graph-boosted (non-direct) results not already encountered
+		// via outbound link traversal above.
+		for _, r := range rawResults {
+			if !r.IsDirect {
+				addLinkedDetail(r.Page, r.Snippet, r.Line)
+			}
 		}
 
 		resp := struct {
