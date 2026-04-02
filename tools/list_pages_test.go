@@ -533,8 +533,8 @@ func TestListPages(t *testing.T) {
 
 		assert.Equal(t, 60, resp.Total,
 			"total must reflect all 60 pages when no filter is applied")
-		assert.LessOrEqual(t, len(resp.Pages), 50,
-			"default limit must cap pages returned at 50")
+		assert.Equal(t, 50, len(resp.Pages),
+			"default limit must return exactly 50 pages when more than 50 pages exist")
 		assert.Equal(t, 50, resp.Limit,
 			"limit must be echoed back as 50 when using the default")
 	})
