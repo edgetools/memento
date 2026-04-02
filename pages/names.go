@@ -1,21 +1,38 @@
 package pages
 
 import (
+	"fmt"
 	"strings"
 	"unicode"
 )
 
-// illegalRune reports whether r is illegal in a filename on any of
-// Linux, macOS, or Windows.
-func illegalRune(r rune) bool {
-	// Windows-illegal: < > : " / \ | ? *
-	// Linux/macOS-illegal: / and null byte
-	// We also strip control characters.
+// forbiddenRune reports whether r is forbidden in a page name.
+// This matches the set that Obsidian rejects: characters illegal on
+// Windows, macOS, Linux, iOS, or Android.
+func forbiddenRune(r rune) bool {
 	switch r {
-	case '<', '>', ':', '"', '/', '\\', '|', '?', '*':
+	case '*', '"', '[', ']', '#', '^', '|', '<', '>', ':', '?', '/', '\\':
 		return true
 	}
-	return r < 0x20
+	return false
+}
+
+// ValidateName checks that name is acceptable as a page name and returns
+// the corresponding filename. An error is returned if the name is empty,
+// starts with '.', or contains any forbidden character.
+func ValidateName(name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("page name must not be empty")
+	}
+	if strings.HasPrefix(name, ".") {
+		return "", fmt.Errorf("page name must not start with '.'")
+	}
+	for _, r := range name {
+		if forbiddenRune(r) {
+			return "", fmt.Errorf("page name contains forbidden character %q", string(r))
+		}
+	}
+	return NameToFilename(name), nil
 }
 
 // Normalize returns the canonical form of a page name: lowercase with
@@ -27,53 +44,23 @@ func Normalize(name string) string {
 	return strings.ToLower(strings.Join(fields, " "))
 }
 
-// NameToFilename converts a page name to a cross-platform safe filename.
-// The result is lowercase, spaces replaced by hyphens, illegal
-// characters stripped, consecutive hyphens collapsed, and ".md" appended.
-// The stem is truncated to 200 characters before the extension.
+// NameToFilename converts a page name to a filename by appending ".md".
+// The stem is truncated to 200 runes before the extension.
+// Casing and spaces are preserved as-is.
 func NameToFilename(name string) string {
-	// Lowercase first.
-	s := strings.ToLower(name)
-
-	// Build the stem character by character.
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if unicode.IsSpace(r) {
-			b.WriteRune('-')
-		} else if illegalRune(r) {
-			// skip
-		} else {
-			b.WriteRune(r)
-		}
-	}
-	stem := b.String()
-
-	// Collapse consecutive hyphens.
-	for strings.Contains(stem, "--") {
-		stem = strings.ReplaceAll(stem, "--", "-")
-	}
-
-	// Trim leading/trailing hyphens and dots.
-	stem = strings.Trim(stem, "-.")
-
 	// Truncate to 200 runes.
-	runes := []rune(stem)
+	runes := []rune(name)
 	if len(runes) > 200 {
 		runes = runes[:200]
-		stem = string(runes)
-		// Re-trim in case truncation left a trailing hyphen/dot.
-		stem = strings.Trim(stem, "-.")
+		name = string(runes)
 	}
-
-	return stem + ".md"
+	return name + ".md"
 }
 
-// FilenameToName converts a filename back to a human-readable page name
-// by stripping the ".md" suffix and replacing hyphens with spaces.
+// FilenameToName converts a filename back to the page name by stripping
+// the ".md" suffix. Casing and spaces are preserved.
 func FilenameToName(filename string) string {
-	name := strings.TrimSuffix(filename, ".md")
-	return strings.ReplaceAll(name, "-", " ")
+	return strings.TrimSuffix(filename, ".md")
 }
 
 // NamesMatch reports whether two page names refer to the same page

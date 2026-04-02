@@ -195,7 +195,7 @@ func registerSearch(s *server.MCPServer, store *pages.Store, idx *index.Index) {
 		}
 
 		resp := struct {
-			Results           []resultEntry    `json:"results"`
+			Results           []resultEntry     `json:"results"`
 			LinkedPageDetails []linkedPageEntry `json:"linked_page_details"`
 		}{
 			Results:           results,

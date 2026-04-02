@@ -10,11 +10,11 @@ import (
 )
 
 const (
-	bm25K1          = 1.5
-	bm25B           = 0.75
-	weightTitle     = 10.0
-	weightLinks     = 3.0
-	weightBody      = 1.0
+	bm25K1      = 1.5
+	bm25B       = 0.75
+	weightTitle = 10.0
+	weightLinks = 3.0
+	weightBody  = 1.0
 )
 
 var stopWords = map[string]bool{

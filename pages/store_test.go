@@ -191,7 +191,6 @@ func TestWrite(t *testing.T) {
 			`Page\Name`,
 		}
 		for _, name := range forbiddenNames {
-			name := name
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
 				dir := t.TempDir()
