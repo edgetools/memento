@@ -1,4 +1,4 @@
-# The gopls MCP server
+# The gopls MCP LSP server
 
 These instructions describe how to efficiently work in the Go programming language using the gopls MCP server. You can load this file directly into a session where the gopls MCP server is connected.
 
