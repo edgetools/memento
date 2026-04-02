@@ -17,6 +17,7 @@ func Register(s *server.MCPServer, store *pages.Store, idx *index.Index) {
 	registerPatchPage(s, store, idx, nil)
 	registerRenamePage(s, store, idx, nil)
 	registerSearch(s, store, idx)
+	registerListPages(s, store, idx)
 }
 
 // RegisterAutoCommit registers all Memento MCP tools with auto-commit enabled.
@@ -29,6 +30,7 @@ func RegisterAutoCommit(s *server.MCPServer, store *pages.Store, idx *index.Inde
 	registerPatchPage(s, store, idx, ac)
 	registerRenamePage(s, store, idx, ac)
 	registerSearch(s, store, idx)
+	registerListPages(s, store, idx)
 }
 
 // autoCommitter performs a git add + commit in a directory.
