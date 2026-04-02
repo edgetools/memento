@@ -43,14 +43,28 @@ identified by their **page name**, which is a human-readable string like
 identifier used everywhere: in tool calls, in `[[wikilinks]]`, and as the
 concept's identity in the brain.
 
-The MCP maps page names to filesystem-compatible filenames and file headings
-internally. These are implementation details that agents never interact with.
-Agents work exclusively with page names.
+**Filename is the page name.** The filename on disk is `{page name}.md` —
+the page name is used directly, preserving its original casing and spaces.
+For example, a page named "Crowd Control" lives at `Crowd Control.md`. This
+means `[[Crowd Control]]` links resolve to the correct file in both Memento
+and Obsidian without any mapping layer. Page names must not contain
+characters that are forbidden in filenames across operating systems:
+
+- **Forbidden characters:** `* " [ ] # ^ | < > : ? / \`
+- **Forbidden patterns:** filenames must not start with `.`
+
+These restrictions are the union of forbidden filename characters across
+Windows, macOS, Linux, iOS, and Android (matching Obsidian's own
+restrictions). The MCP rejects page names containing forbidden characters
+with a clear error rather than silently stripping them.
 
 **Name resolution:** Page name lookups are case-insensitive with whitespace
 normalization (collapsing multiple spaces, trimming). So `[[Crowd Control]]`,
 `[[crowd control]]`, and `[[Crowd  Control]]` all resolve to the same page.
 The canonical casing is whatever was used when the page was first created.
+On case-insensitive filesystems (Windows, macOS), the OS naturally handles
+this. On case-sensitive filesystems (Linux), the MCP performs
+case-insensitive lookup against its in-memory page index.
 
 ### Wikilinks as the Only Taxonomy
 
@@ -571,7 +585,7 @@ memento/
 │   └── index.go          # Composite index (search pipeline, relevance filter)
 ├── pages/
 │   ├── store.go          # Filesystem ops (read, write, delete, scan)
-│   ├── names.go          # Page name ↔ filename mapping, case-insensitive lookup
+│   ├── names.go          # Page name validation, case-insensitive lookup
 │   └── parser.go         # Markdown parsing, wikilink extraction, heading extraction
 ├── tools/
 │   ├── search.go
@@ -649,12 +663,22 @@ Core instructions:
 
 ## Design Decisions
 
-**Why readable page names instead of slugs?**
-Agents are the primary interface to the brain, not humans browsing files. Readable
-names like `[[Enchanter Mez Strategy]]` are self-documenting and natural for agents
-to produce. They also reduce disambiguation problems because descriptive names are
-inherently less ambiguous than terse identifiers. The MCP handles the mapping to
-filesystem-compatible filenames internally; agents never see slugs.
+**Why use the page name directly as the filename?**
+The filename on disk is `{page name}.md` — no lowercasing, no slug transformation.
+`[[Crowd Control]]` resolves to `Crowd Control.md`, which is exactly what Obsidian
+expects when resolving wikilinks. This eliminates a mapping layer, makes files
+browsable in Obsidian without configuration, and keeps filenames human-readable.
+The tradeoff is that page names must avoid characters forbidden in filenames across
+operating systems (`* " [ ] # ^ | < > : ? / \`), but these rarely appear in
+natural-language concept names.
+
+**Why reject forbidden characters instead of stripping them?**
+Silently stripping characters would create a disconnect between the page name the
+agent intended and the one stored, which could cause confusion when searching or
+linking. Rejecting with a clear error lets the agent choose an alternative name
+intentionally. The forbidden set is the union of restrictions across Windows, macOS,
+Linux, iOS, and Android — matching Obsidian's own validation — so content directories
+are portable across platforms.
 
 **Why `[[wikilinks]]` instead of `#tags`?**
 Every concept worth tagging is worth having a page for. A `[[link]]` creates a node

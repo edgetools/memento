@@ -1,143 +1,82 @@
-# Change Request: Deduplicate linked pages in search response
+# Change Request: Page Name as Filename
 
-## Problem
+## Motivation
 
-The `search` tool embeds full `linked_pages` entries (page name, snippet, line)
-under every result. When the same page is linked from multiple results, its
-snippet is repeated verbatim each time. In a real brain with interconnected
-pages, this causes significant duplication in the response — wasting tokens and
-making the output harder to scan.
+Obsidian resolves `[[Foo Bar]]` by looking for a file named `Foo Bar.md`. The
+current implementation maps page names to slug-style filenames (e.g.,
+`foo-bar.md`), which means wikilinks don't resolve when browsing content in
+Obsidian. Changing the filename convention to use the page name directly makes
+Memento content fully compatible with Obsidian's wikilink resolution.
 
-## Desired behavior
+## Behavioral Changes
 
-The search response structure changes from:
+### 1. Filename format
 
-```json
-{
-  "results": [
-    {
-      "page": "A",
-      "relevance": 1,
-      "snippet": "...",
-      "line": 2,
-      "linked_pages": [
-        { "page": "X", "snippet": "...", "line": 2 },
-        { "page": "Y", "snippet": "...", "line": 2 }
-      ]
-    },
-    {
-      "page": "B",
-      "relevance": 0.9,
-      "snippet": "...",
-      "line": 5,
-      "linked_pages": [
-        { "page": "X", "snippet": "...", "line": 2 },
-        { "page": "Z", "snippet": "...", "line": 2 }
-      ]
-    }
-  ]
-}
-```
+**Before:** Page name is lowercased and spaces are replaced with dashes.
+`"Crowd Control"` → `crowd-control.md`
 
-To:
+**After:** Page name is used directly as the filename, preserving original
+casing and spaces. `"Crowd Control"` → `Crowd Control.md`
 
-```json
-{
-  "results": [
-    {
-      "page": "A",
-      "relevance": 1,
-      "snippet": "...",
-      "line": 2,
-      "linked_pages": ["X", "Y"]
-    },
-    {
-      "page": "B",
-      "relevance": 0.9,
-      "snippet": "...",
-      "line": 5,
-      "linked_pages": ["X", "Z"]
-    }
-  ],
-  "linked_page_details": [
-    { "page": "X", "snippet": "...", "line": 2 },
-    { "page": "Y", "snippet": "...", "line": 2 },
-    { "page": "Z", "snippet": "...", "line": 2 }
-  ]
-}
-```
+### 2. Page name validation
 
-### Rules
+Page names must not contain characters that are forbidden in filenames across
+Windows, macOS, Linux, iOS, and Android. This matches Obsidian's own filename
+restrictions.
 
-1. **`linked_pages` on each result becomes `[]string`** — just page names, no
-   snippets or line numbers.
+**Forbidden characters:** `* " [ ] # ^ | < > : ? / \`
 
-2. **`linked_page_details` is a new top-level field** on the response object,
-   alongside `results`. It is a flat, deduplicated list of
-   `{ page, snippet, line }` objects.
+**Forbidden patterns:** Page names must not start with `.`
 
-3. **Deduplication**: each linked page name appears at most once in
-   `linked_page_details`, even if referenced by multiple results.
+When a tool call provides a page name containing forbidden characters, the MCP
+returns an error describing which characters are not allowed. It does not
+silently strip or replace them.
 
-4. **Exclusion**: if a linked page already appears as a result in `results`
-   (matched by page name, case-insensitive), it is **omitted** from
-   `linked_page_details` entirely. It already has its own snippet in `results`.
+### 3. Case-insensitive lookup
 
-5. **Ordering**: `linked_page_details` entries should appear in the order they
-   are first encountered while iterating through results (stable, deterministic).
+Case-insensitive page name resolution continues to work as before. Since the
+filename now preserves the original casing, the in-memory index must handle
+case-insensitive matching on lookup (this is already the design — just
+confirming it applies to the new filename format too). On case-insensitive
+filesystems (Windows, macOS) the OS handles this naturally; on case-sensitive
+filesystems (Linux) the MCP's in-memory index is authoritative.
 
-6. **Token budgeting**: the `max_tokens` budget should account for the total
-   response size, including `linked_page_details`. The current approach of
-   marshaling each result entry to JSON and counting words still works, but the
-   `linked_page_details` entries also need to count against the budget. One
-   approach: after building all results and collecting linked page details,
-   marshal the full response and check total tokens. If over budget, remove
-   results from the end (and their unique linked page details) until it fits.
-   Alternatively, accumulate token counts for linked page details as they're
-   added. Either approach is acceptable as long as the total response respects
-   the budget.
+### 4. Existing content migration
 
-## Files to change
+Any existing content directories using slug-style filenames will need their
+files renamed. This is out of scope for this change — it can be handled by a
+one-time migration script or manually. The MCP itself does not need to handle
+both formats; it only supports the new format.
 
-### `tools/search.go`
+## Affected Tools
 
-This is the only file that needs to change. The modifications are:
+All tools that create or look up files by page name are affected:
 
-1. **Replace `linkedPageEntry` struct usage in `resultEntry`**: change
-   `LinkedPages []linkedPageEntry` to `LinkedPages []string` with json tag
-   `"linked_pages"`.
+- **`write_page`**: Creates files using the page name directly as filename.
+- **`patch_page`**: Looks up files by page name; append/prepend create files
+  using the page name directly.
+- **`rename_page`**: Renames the file on disk to match the new page name.
+- **`delete_page`**: Looks up files by page name.
+- **`get_page`**: Looks up files by page name.
+- **`search`**: Results reference page names (no change to search behavior,
+  but the underlying filename lookup changes).
 
-2. **Add a new response-level type** for the linked page detail:
-   keep the existing `linkedPageEntry` struct (or rename it) with fields
-   `Page string`, `Snippet string`, `Line int`.
+## Affected Internal Components
 
-3. **Collect linked page details into a deduplicated list** as results are
-   built:
-   - Maintain a `seen` set (map[string]bool) of page names already in
-     `linked_page_details` or in `results`.
-   - Before adding a linked page to `linked_page_details`, check both sets.
-   - Build the result's `linked_pages` as `[]string` (just names).
+- **`pages/names.go`**: The page name → filename mapping changes from slug
+  generation to direct use. Validation of forbidden characters is added.
+  Case-insensitive lookup logic may need adjustment since filenames now
+  preserve casing.
+- **`pages/store.go`**: Filesystem operations (read, write, delete, scan) use
+  the new filename format.
+- **Any tests** that assert on generated filenames or create test fixtures
+  with slug-style names.
 
-4. **Update the response struct** from:
-   ```go
-   resp := struct {
-       Results []resultEntry `json:"results"`
-   }{...}
-   ```
-   To:
-   ```go
-   resp := struct {
-       Results           []resultEntry    `json:"results"`
-       LinkedPageDetails []linkedPageEntry `json:"linked_page_details"`
-   }{...}
-   ```
+## What Does NOT Change
 
-5. **Update token budgeting** to account for the total response including
-   `linked_page_details`.
-
-### Tests
-
-Any existing tests for the search tool that assert on the response JSON
-structure will need to be updated to match the new shape. The linked_pages
-field in results becomes `[]string`, and `linked_page_details` moves to the
-top level.
+- Page names are still the sole identifier used in tool calls and wikilinks.
+- Case-insensitive resolution with whitespace normalization still works.
+- The `# heading` inside the file still matches the page name.
+- The in-memory index, search pipeline, and link graph are unaffected.
+- Git auto-commit behavior is unaffected.
+- All tool input/output schemas are unaffected.
