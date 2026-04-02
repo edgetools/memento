@@ -1,1 +1,0 @@
-When reading source code files or modules, ALWAYS use a language server instead of read or grep tools (e.g. you should use gopls for golang).
