@@ -512,6 +512,56 @@ deleted page (broken links are tolerated and caught by future maintenance).
 
 ---
 
+### `list_pages`
+
+Returns a sorted, paginated list of page names. Useful for dream sessions that
+need to systematically discover orphaned or underlinked pages, and for recall
+sessions that want to survey the brain's top hub concepts before diving in.
+
+**Input:**
+```json
+{
+  "sort_by": "least_linked",
+  "limit": 50,
+  "offset": 0,
+  "filter": ["combat", "enchanter"]
+}
+```
+
+All fields are optional. Defaults: `sort_by: "alphabetical"`, `limit: 50`,
+`offset: 0`, no filter.
+
+**`sort_by` values:**
+
+- **`alphabetical`** (default): page names sorted A–Z.
+- **`least_linked`**: pages with the fewest inbound links first. Surfaces
+  orphans and isolated concepts — the primary entry point for dream sessions.
+- **`most_linked`**: pages with the most inbound links first. Surfaces hub
+  concepts — useful for recall sessions building broad context.
+
+**`filter`**: array of keywords. Page name must contain all keywords
+(case-insensitive, AND match). Narrows the list to pages whose names contain
+every specified term. This is name substring matching, not search — use
+`search` for semantic queries.
+
+**`limit`** and **`offset`**: standard pagination. An agent can walk the full
+page list by incrementing `offset` by `limit` until `offset >= total`.
+
+**Output:**
+```json
+{
+  "pages": ["Crowd Control", "Enchanter", "Pulling"],
+  "total": 247,
+  "offset": 0,
+  "limit": 50
+}
+```
+
+`total` is the count of matching pages before pagination is applied, so the
+agent knows how many more pages remain. Names only — no snippets.
+
+---
+
 ## CLI Interface
 
 ### MCP Mode (default)
@@ -593,7 +643,8 @@ memento/
 │   ├── write_page.go
 │   ├── patch_page.go
 │   ├── rename_page.go
-│   └── delete_page.go
+│   ├── delete_page.go
+│   └── list_pages.go
 ├── testdata/
 │   └── ...
 └── README.md
@@ -617,9 +668,36 @@ memento/
 
 ---
 
-## Skills (outline, to be designed separately)
+## Skills
 
-### "Write to the Brain" Skill
+### Recall Skill
+
+located at `claude-skills/memento-recall/SKILL.md`
+
+For use when starting work that might benefit from prior context.
+
+Core instructions:
+- When encountering a topic or term, search memento before making assumptions
+- Follow `[[links]]` in retrieved pages to build deeper understanding (the
+  Wikipedia rabbit hole pattern)
+- Use retrieved context to avoid re-deriving decisions already made
+- If memento doesn't have relevant content, proceed without it — don't block
+
+### Snapshot Skill
+
+located at `claude-skills/memento-snapshot/SKILL.md`
+
+For use reflexively during a session to jot quick notes while context is fresh.
+
+Core instructions:
+- Name the concept — use a descriptive phrase (`[[Retry Backoff Strategy]]`, not `[[retry]]`)
+- Write what you know right now — one sentence to one paragraph is enough
+- Add `[[wikilinks]]` to related concepts you know exist (or should exist)
+- Call `patch_page` with `append` — if the page doesn't exist it will be created automatically
+
+### Sleep Skill
+
+located at `claude-skills/memento-sleep/SKILL.md`
 
 For use at the end of a planning session (Claude Desktop or Claude Code
 interactive).
@@ -635,18 +713,9 @@ Core instructions:
 - Link everything together: new content should reference concept pages, and
   concept pages should be updated to reference related concepts
 
-### "Read from the Brain" Skill
+### Dream Skill
 
-For use when starting work that might benefit from prior context.
-
-Core instructions:
-- When encountering a topic or term, search memento before making assumptions
-- Follow `[[links]]` in retrieved pages to build deeper understanding (the
-  Wikipedia rabbit hole pattern)
-- Use retrieved context to avoid re-deriving decisions already made
-- If memento doesn't have relevant content, proceed without it — don't block
-
-### "Maintain the Brain" Skill
+located at `claude-skills/memento-dream/SKILL.md`
 
 For dedicated cleanup sessions.
 
@@ -811,10 +880,14 @@ git commit transparently, so the history builds itself. Per-tool-call commits (n
 batched) keep the granularity useful: each commit corresponds to one logical change.
 The flag is opt-in because not every content directory will be a git repo.
 
-**Why no `list_pages` tool?**
-An agent would almost never want an unranked list of every page. Search is the
-primary discovery mechanism. If the brain has hundreds of pages, a list is noise.
-If we find a use case for listing later, we can add it.
+**Why `list_pages` instead of relying solely on `search`?**
+Dream and recall skills use search as the primary discovery mechanism, but search
+requires knowing what to look for. Orphaned pages and underlinked concepts are
+exactly the ones an agent won't think to search for. `list_pages` sorted by
+`least_linked` gives the dream skill a systematic entry point into the graph's
+edges — pages that exist but have been forgotten by the link structure.
+`most_linked` gives recall sessions a "what are the core concepts" shortcut.
+Pagination and name-only output keep token cost low even over large brains.
 
 **Why server-side search instead of exposing the raw index?**
 The search tool encapsulates ranking logic (BM25 + trigram fallback + graph boost) that
