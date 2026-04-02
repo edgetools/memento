@@ -46,15 +46,15 @@ func registerDeletePage(s *server.MCPServer, store *pages.Store, idx *index.Inde
 		idx.Remove(canonicalName)
 
 		resp := struct {
-			Page          string `json:"page"`
-			CommitWarning string `json:"commit_warning,omitempty"`
+			Page           string   `json:"page"`
+			CommitFailures []string `json:"commit_failures,omitempty"`
 		}{
 			Page: canonicalName,
 		}
 
 		if ac != nil {
 			if commitErr := ac.commit(fmt.Sprintf("memento: deleted %q", canonicalName)); commitErr != nil {
-				resp.CommitWarning = commitErr.Error()
+				resp.CommitFailures = append(resp.CommitFailures, commitErr.Error())
 			}
 		}
 

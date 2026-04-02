@@ -81,9 +81,9 @@ func registerRenamePage(s *server.MCPServer, store *pages.Store, idx *index.Inde
 		}
 
 		resp := struct {
-			Page          string `json:"page"`
-			OldName       string `json:"old_name"`
-			CommitWarning string `json:"commit_warning,omitempty"`
+			Page           string   `json:"page"`
+			OldName        string   `json:"old_name"`
+			CommitFailures []string `json:"commit_failures,omitempty"`
 		}{
 			Page:    newName,
 			OldName: oldName,
@@ -91,7 +91,7 @@ func registerRenamePage(s *server.MCPServer, store *pages.Store, idx *index.Inde
 
 		if ac != nil {
 			if commitErr := ac.commit(fmt.Sprintf("memento: renamed %q to %q", oldName, newName)); commitErr != nil {
-				resp.CommitWarning = commitErr.Error()
+				resp.CommitFailures = append(resp.CommitFailures, commitErr.Error())
 			}
 		}
 

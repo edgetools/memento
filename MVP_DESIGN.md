@@ -17,9 +17,9 @@ user points the server at. The server is generic; the content is personal.
 ## Architecture
 
 Go MCP server using `mark3labs/mcp-go`, stdio transport. Single binary, no runtime
-dependencies. Takes a `--content-dir` flag pointing at a directory of markdown files.
+dependencies. Takes a `-content-dir` flag pointing at a directory of markdown files.
 
-On startup, parses all `.md` files in `--content-dir` to build an in-memory index:
+On startup, parses all `.md` files in `-content-dir` to build an in-memory index:
 
 - **BM25 inverted index** with weighted field scoring (title, wikilinks, body)
   and Porter stemming for relevance-ranked keyword search
@@ -85,7 +85,7 @@ evolves its own organizational patterns over time.
 
 The brain content directory is expected to live in a git repo. Git history serves
 as the audit trail and time machine. Pages can be freely rewritten because
-previous versions are always recoverable. With `--auto-commit`, the MCP commits
+previous versions are always recoverable. With `-auto-commit`, the MCP commits
 after every write operation automatically. Without it, committing is the caller's
 responsibility.
 
@@ -362,9 +362,12 @@ To change a page's name, use `rename_page`.
 ```json
 {
   "page": "Enchanter",
-  "links_to": ["Mez", "Haste", "Crowd Control"]
+  "links_to": ["Mez", "Haste", "Crowd Control"],
+  "commit_failures": ["git commit failed: exit status 128: ..."]
 }
 ```
+
+When `-auto-commit` is enabled and commit operations fail for any reason, the failed commit attempts will be listed in `commit_failures`.
 
 ---
 
@@ -437,7 +440,7 @@ Operations are applied in order. If any operation fails, none are applied
 
 Renames a page and updates all `[[wikilinks]]` across the brain that reference
 the old name. The page content is preserved. This is atomic: the rename and all
-link updates happen together (and produce a single commit if `--auto-commit` is
+link updates happen together (and produce a single commit if `-auto-commit` is
 enabled).
 
 **Input:**
@@ -492,17 +495,17 @@ deleted page (broken links are tolerated and caught by future maintenance).
 ### MCP Mode (default)
 
 ```
-memento --content-dir ./brain
+memento -content-dir ./brain
 ```
 
 Starts the MCP server over stdio.
 
 **Optional flags:**
 
-- `--auto-commit`: Automatically `git add` and `git commit` after every write
+- `-auto-commit`: Automatically `git add` and `git commit` after every write
   operation (`write_page`, `patch_page`, `rename_page`, `delete_page`). Commit
   messages are descriptive but terse (e.g., `memento: updated "Crowd Control"`).
-  On startup with this flag, the MCP verifies that `--content-dir` is inside a
+  On startup with this flag, the MCP verifies that `-content-dir` is inside a
   git repo and exits with an error if it is not. Without this flag, no git
   operations are performed.
 
@@ -518,15 +521,15 @@ User-global Claude settings:
     "memento": {
       "command": "/path/to/memento",
       "args": [
-        "--content-dir", "/path/to/brain",
-        "--auto-commit"
+        "-content-dir", "/path/to/brain",
+        "-auto-commit"
       ]
     }
   }
 }
 ```
 
-The `--content-dir` path can be absolute or relative to the working directory.
+The `-content-dir` path can be absolute or relative to the working directory.
 Multiple memento instances can be registered under different names:
 
 ```json
@@ -534,11 +537,11 @@ Multiple memento instances can be registered under different names:
   "mcpServers": {
     "memento-personal": {
       "command": "/path/to/memento",
-      "args": ["--content-dir", "/path/to/personal-brain"]
+      "args": ["-content-dir", "/path/to/personal-brain"]
     },
     "memento-shared": {
       "command": "/path/to/memento",
-      "args": ["--content-dir", "/path/to/shared-brain"]
+      "args": ["-content-dir", "/path/to/shared-brain"]
     }
   }
 }
@@ -578,7 +581,7 @@ memento/
 
 ## What Memento Does NOT Do
 
-- **No git operations by default.** With `--auto-commit`, the MCP commits after
+- **No git operations by default.** With `-auto-commit`, the MCP commits after
   each write. Without it, committing is the caller's responsibility.
 - **No page types or templates.** A page is a page.
 - **No access control.** The MCP assumes it is the sole writer.
@@ -728,7 +731,7 @@ need to delete the old page, create the new one, then manually find and update e
 page that linked to the old name. That's error-prone and the agent might miss
 references. Since the MCP has the full link graph in memory, it can atomically rename
 the page and update all references in a single operation (and a single git commit
-with `--auto-commit`).
+with `-auto-commit`).
 
 **Why does `append`/`prepend` create pages that don't exist?**
 The brain has two modes: accumulation (jotting notes during a session) and
@@ -769,7 +772,7 @@ support, an agent getting three search hits on the same page would need three
 separate `get_page` calls. As pages grow over time through appends and updates,
 this prevents unnecessary token consumption and round trips.
 
-**Why `--auto-commit`?**
+**Why `-auto-commit`?**
 Git history is the audit trail for brain content, but remembering to commit is
 friction that discourages use. Auto-commit makes every write operation produce a
 git commit transparently, so the history builds itself. Per-tool-call commits (not

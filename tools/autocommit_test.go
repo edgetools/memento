@@ -18,6 +18,46 @@ import (
 
 // ---- Auto-commit test helpers -----------------------------------------------
 
+// setupBrokenGitRepo initialises a git repo with no user identity and no initial
+// commit — git commit will fail, which is the condition we want to test.
+func setupBrokenGitRepo(t *testing.T, dir string) string {
+	t.Helper()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git init failed: %s", out)
+	return dir
+}
+
+// setupTestServerAutoCommitBroken creates a server in auto-commit mode backed
+// by a git repo that will always fail to commit (no identity, no initial commit).
+func setupTestServerAutoCommitBroken(t *testing.T) (*client.Client, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	setupBrokenGitRepo(t, dir)
+
+	store := pages.NewStore(dir)
+	idx := index.NewIndex()
+
+	s := server.NewMCPServer("memento-test-autocommit-broken", "0.0.0", server.WithToolCapabilities(true))
+	tools.RegisterAutoCommit(s, store, idx, dir)
+
+	c, err := client.NewInProcessClient(s)
+	require.NoError(t, err)
+	t.Cleanup(func() { c.Close() })
+
+	require.NoError(t, c.Start(context.Background()))
+
+	initReq := mcp.InitializeRequest{}
+	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+	initReq.Params.ClientInfo = mcp.Implementation{Name: "memento-test-client", Version: "0.0.0"}
+	_, err = c.Initialize(context.Background(), initReq)
+	require.NoError(t, err)
+
+	return c, dir
+}
+
 // initGitRepo initialises a bare git repo in dir with an initial empty commit
 // so that `git log` works immediately after. Returns dir for convenience.
 func initGitRepo(t *testing.T, dir string) string {
@@ -291,5 +331,120 @@ func TestAutoCommit(t *testing.T) {
 
 		assert.Equal(t, 0, commitCountAfterInit(t, dir),
 			"no commits should be created when auto-commit is disabled")
+	})
+}
+
+// ---- TestAutoCommitFailures -------------------------------------------------
+// These tests verify that when auto-commit is enabled but git commit fails
+// (e.g. fresh repo with no identity or initial commit), the tool still reports
+// success for the write operation but surfaces the failure in commit_failures.
+
+// commitFailuresResp is a minimal struct that captures only the fields we care
+// about when asserting commit failure reporting. All four write tools include
+// commit_failures in their response JSON.
+type commitFailuresResp struct {
+	CommitFailures []string `json:"commit_failures"`
+}
+
+func TestAutoCommitFailures(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write_page_reports_commit_failure", func(t *testing.T) {
+		t.Parallel()
+		c, _ := setupTestServerAutoCommitBroken(t)
+
+		result := callTool(t, c, "write_page", map[string]any{
+			"page":    "Enchanter",
+			"content": "The enchanter specialises in crowd control.",
+		})
+
+		require.False(t, result.IsError, "write_page should succeed even when commit fails")
+		var resp commitFailuresResp
+		parseJSON(t, result, &resp)
+		assert.NotEmpty(t, resp.CommitFailures, "commit_failures should be populated when git commit fails")
+	})
+
+	t.Run("delete_page_reports_commit_failure", func(t *testing.T) {
+		t.Parallel()
+
+		// We need a working repo to write the page, then switch to a broken one
+		// for the delete. Easiest: use the broken server for both — write will
+		// also fail to commit (and report it), but the page file still exists.
+		c, _ := setupTestServerAutoCommitBroken(t)
+
+		// write_page succeeds at the store level even if commit fails.
+		callTool(t, c, "write_page", map[string]any{
+			"page":    "Obsolete Concept",
+			"content": "No longer needed.",
+		})
+
+		result := callTool(t, c, "delete_page", map[string]any{
+			"page": "Obsolete Concept",
+		})
+
+		require.False(t, result.IsError, "delete_page should succeed even when commit fails")
+		var resp commitFailuresResp
+		parseJSON(t, result, &resp)
+		assert.NotEmpty(t, resp.CommitFailures, "commit_failures should be populated when git commit fails")
+	})
+
+	t.Run("patch_page_reports_commit_failure", func(t *testing.T) {
+		t.Parallel()
+		c, _ := setupTestServerAutoCommitBroken(t)
+
+		callTool(t, c, "write_page", map[string]any{
+			"page":    "Crowd Control",
+			"content": "Enchanter is the primary CC class.",
+		})
+
+		result := callTool(t, c, "patch_page", map[string]any{
+			"page": "Crowd Control",
+			"operations": []any{
+				map[string]any{
+					"op":      "append",
+					"content": "\n\nBards also have limited CC.",
+				},
+			},
+		})
+
+		require.False(t, result.IsError, "patch_page should succeed even when commit fails")
+		var resp commitFailuresResp
+		parseJSON(t, result, &resp)
+		assert.NotEmpty(t, resp.CommitFailures, "commit_failures should be populated when git commit fails")
+	})
+
+	t.Run("rename_page_reports_commit_failure", func(t *testing.T) {
+		t.Parallel()
+		c, _ := setupTestServerAutoCommitBroken(t)
+
+		callTool(t, c, "write_page", map[string]any{
+			"page":    "Crowd Control",
+			"content": "Abilities that restrict enemy movement.",
+		})
+
+		result := callTool(t, c, "rename_page", map[string]any{
+			"page":     "Crowd Control",
+			"new_name": "Crowd Control Mechanics",
+		})
+
+		require.False(t, result.IsError, "rename_page should succeed even when commit fails")
+		var resp commitFailuresResp
+		parseJSON(t, result, &resp)
+		assert.NotEmpty(t, resp.CommitFailures, "commit_failures should be populated when git commit fails")
+	})
+
+	t.Run("no_failures_on_healthy_repo", func(t *testing.T) {
+		t.Parallel()
+		c, _ := setupTestServerAutoCommit(t)
+
+		result := callTool(t, c, "write_page", map[string]any{
+			"page":    "Enchanter",
+			"content": "The enchanter specialises in crowd control.",
+		})
+
+		require.False(t, result.IsError)
+		var resp commitFailuresResp
+		parseJSON(t, result, &resp)
+		assert.Empty(t, resp.CommitFailures, "commit_failures must be absent when commit succeeds")
 	})
 }

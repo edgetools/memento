@@ -208,7 +208,7 @@ func registerPatchPage(s *server.MCPServer, store *pages.Store, idx *index.Index
 		resp := struct {
 			Page           string   `json:"page"`
 			LinksTo        []string `json:"links_to"`
-			CommitWarning  string   `json:"commit_warning,omitempty"`
+			CommitFailures []string `json:"commit_failures,omitempty"`
 		}{
 			Page:    updatedPage.Name,
 			LinksTo: linksTo,
@@ -216,7 +216,7 @@ func registerPatchPage(s *server.MCPServer, store *pages.Store, idx *index.Index
 
 		if ac != nil {
 			if commitErr := ac.commit(fmt.Sprintf("memento: patched %q", updatedPage.Name)); commitErr != nil {
-				resp.CommitWarning = commitErr.Error()
+				resp.CommitFailures = append(resp.CommitFailures, commitErr.Error())
 			}
 		}
 
