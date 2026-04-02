@@ -58,19 +58,23 @@ func registerWritePage(s *server.MCPServer, store *pages.Store, idx *index.Index
 		}
 
 		resp := struct {
-			Page    string   `json:"page"`
-			LinksTo []string `json:"links_to"`
+			Page           string   `json:"page"`
+			LinksTo        []string `json:"links_to"`
+			CommitWarning  string   `json:"commit_warning,omitempty"`
 		}{
 			Page:    p.Name,
 			LinksTo: linksTo,
 		}
 
+		if ac != nil {
+			if commitErr := ac.commit(fmt.Sprintf("memento: updated %q", p.Name)); commitErr != nil {
+				resp.CommitWarning = commitErr.Error()
+			}
+		}
+
 		data, err := json.Marshal(resp)
 		if err != nil {
 			return mcp.NewToolResultError("internal error marshaling response: " + err.Error()), nil
-		}
-		if ac != nil {
-			_ = ac.commit(fmt.Sprintf("memento: updated %q", p.Name))
 		}
 
 		return mcp.NewToolResultText(string(data)), nil
