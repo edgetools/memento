@@ -70,6 +70,19 @@ func TestWrite(t *testing.T) {
 		assert.Contains(t, raw, "Crowd control refers to abilities that limit enemy movement.")
 	})
 
+	t.Run("filename_preserves_casing_and_spaces", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		s := pages.NewStore(dir)
+
+		_, err := s.Write("Crowd Control", "Body text.")
+		require.NoError(t, err)
+
+		// The file on disk must be named "Crowd Control.md" (not a slug like "crowd-control.md").
+		_, statErr := os.Stat(filepath.Join(dir, "Crowd Control.md"))
+		assert.NoError(t, statErr, "file should be named 'Crowd Control.md'")
+	})
+
 	t.Run("adds_heading", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
@@ -159,6 +172,44 @@ func TestWrite(t *testing.T) {
 		raw := readTestPage(t, dir, "Empty Page")
 		assert.Contains(t, raw, "# Empty Page")
 	})
+
+	t.Run("rejects_forbidden_characters", func(t *testing.T) {
+		t.Parallel()
+		forbiddenNames := []string{
+			`Page*Name`,
+			`Page"Name`,
+			`Page[Name`,
+			`Page]Name`,
+			`Page#Name`,
+			`Page^Name`,
+			`Page|Name`,
+			`Page<Name`,
+			`Page>Name`,
+			`Page:Name`,
+			`Page?Name`,
+			`Page/Name`,
+			`Page\Name`,
+		}
+		for _, name := range forbiddenNames {
+			name := name
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				dir := t.TempDir()
+				s := pages.NewStore(dir)
+				_, err := s.Write(name, "Some content.")
+				require.Error(t, err, "expected error for page name %q", name)
+			})
+		}
+	})
+
+	t.Run("rejects_leading_dot", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		s := pages.NewStore(dir)
+
+		_, err := s.Write(".hidden", "Content.")
+		require.Error(t, err)
+	})
 }
 
 // ---- Load -----------------------------------------------------------------
@@ -239,19 +290,33 @@ func TestLoad(t *testing.T) {
 		dir := t.TempDir()
 		s := pages.NewStore(dir)
 
-		// Write the file directly, bypassing the store's heading management,
-		// to simulate pre-existing content in the content directory.
+		// Write the file directly using the new filename convention (page name + .md),
+		// to simulate pre-existing Obsidian-compatible content.
 		writeTestPage(t, dir, "Crowd Control", "# Crowd Control\n\nBody with [[Enchanter]] link.")
 
 		p, err := s.Load("Crowd Control")
 		require.NoError(t, err)
 
-		// Name must come from the heading in the file, not from filename mapping
-		// (FilenameToName would produce lowercase "crowd control").
+		// Name must come from the heading in the file.
 		assert.Equal(t, "Crowd Control", p.Name)
 		assert.Equal(t, "Crowd Control", p.Title)
 		assert.Contains(t, p.Body, "Body with")
 		assert.ElementsMatch(t, []string{"Enchanter"}, p.WikiLinks)
+	})
+
+	t.Run("obsidian_wikilink_file_resolves", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		s := pages.NewStore(dir)
+
+		// Simulate the Obsidian use-case: file named exactly "Crowd Control.md"
+		// on disk, which is what [[Crowd Control]] resolves to in Obsidian.
+		err := os.WriteFile(filepath.Join(dir, "Crowd Control.md"), []byte("# Crowd Control\n\nSome body."), 0644)
+		require.NoError(t, err)
+
+		p, err := s.Load("Crowd Control")
+		require.NoError(t, err)
+		assert.Equal(t, "Crowd Control", p.Name)
 	})
 }
 
@@ -274,6 +339,26 @@ func TestDelete(t *testing.T) {
 
 		assert.False(t, s.Exists("Crowd Control"))
 		assert.Equal(t, 0, countMDFiles(t, dir))
+	})
+
+	t.Run("removes_correct_file_preserving_name", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		s := pages.NewStore(dir)
+
+		_, err := s.Write("Crowd Control", "Some content.")
+		require.NoError(t, err)
+
+		// Confirm the file was named with spaces (not a slug).
+		_, statErr := os.Stat(filepath.Join(dir, "Crowd Control.md"))
+		require.NoError(t, statErr)
+
+		err = s.Delete("Crowd Control")
+		require.NoError(t, err)
+
+		// The space-named file must be gone.
+		_, statErr = os.Stat(filepath.Join(dir, "Crowd Control.md"))
+		assert.True(t, os.IsNotExist(statErr))
 	})
 
 	t.Run("case_insensitive", func(t *testing.T) {
@@ -320,10 +405,11 @@ func TestRename(t *testing.T) {
 
 		assert.False(t, s.Exists("Old Name"), "old page should no longer exist")
 		assert.True(t, s.Exists("New Name"), "new page should exist")
-		// Verify the old filename is gone and the new one is present.
-		_, statErr := os.Stat(filepath.Join(dir, pages.NameToFilename("Old Name")))
+
+		// Verify the old filename is gone and the new one is present on disk.
+		_, statErr := os.Stat(filepath.Join(dir, "Old Name.md"))
 		assert.True(t, os.IsNotExist(statErr), "old file should be removed from disk")
-		_, statErr = os.Stat(filepath.Join(dir, pages.NameToFilename("New Name")))
+		_, statErr = os.Stat(filepath.Join(dir, "New Name.md"))
 		assert.NoError(t, statErr, "new file should be on disk")
 	})
 
@@ -405,6 +491,20 @@ func TestRename(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Nonexistent")
 	})
+
+	t.Run("rejects_forbidden_chars_in_new_name", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		s := pages.NewStore(dir)
+
+		_, err := s.Write("Valid Name", "Content.")
+		require.NoError(t, err)
+
+		err = s.Rename("Valid Name", "Bad:Name")
+		require.Error(t, err)
+		// Original page must still exist.
+		assert.True(t, s.Exists("Valid Name"))
+	})
 }
 
 // ---- Scan -----------------------------------------------------------------
@@ -426,23 +526,24 @@ func TestScan(t *testing.T) {
 
 		result := s.Scan()
 		require.Len(t, result, 3)
-		// Names must be derived from the H1 heading in each file, not from
-		// filename mapping (FilenameToName produces lowercase "page one", etc.).
+		// Names must be derived from the H1 heading in each file.
 		assert.ElementsMatch(t, []string{"Page One", "Page Two", "Page Three"}, pageNames(result))
 	})
 
-	t.Run("reads_externally_created_pages", func(t *testing.T) {
+	t.Run("reads_obsidian_named_files", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		s := pages.NewStore(dir)
 
-		// Simulate files that pre-exist in the content dir (not written by the store).
-		writeTestPage(t, dir, "Crowd Control", "# Crowd Control\n\nContent with [[Enchanter]].")
-		writeTestPage(t, dir, "Enchanter", "# Enchanter\n\nA utility class.")
+		// Simulate files created by Obsidian or pre-existing with the new convention.
+		err := os.WriteFile(filepath.Join(dir, "Crowd Control.md"), []byte("# Crowd Control\n\nContent with [[Enchanter]]."), 0644)
+		require.NoError(t, err)
+		err = os.WriteFile(filepath.Join(dir, "Enchanter.md"), []byte("# Enchanter\n\nA utility class."), 0644)
+		require.NoError(t, err)
 
 		result := s.Scan()
 		require.Len(t, result, 2)
-		// Canonical names must come from the headings, not filename conversion.
+		// Canonical names must come from the headings.
 		assert.ElementsMatch(t, []string{"Crowd Control", "Enchanter"}, pageNames(result))
 	})
 
@@ -463,7 +564,7 @@ func TestScan(t *testing.T) {
 		_, err := s.Write("Real Page", "Content.")
 		require.NoError(t, err)
 
-		// Non-.md file written directly to the content dir.
+		// Non-.md files written directly to the content dir.
 		err = os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("some text"), 0644)
 		require.NoError(t, err)
 		err = os.WriteFile(filepath.Join(dir, "README"), []byte("readme"), 0644)
