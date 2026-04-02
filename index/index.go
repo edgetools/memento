@@ -34,10 +34,11 @@ const (
 
 // Result is a single result from the composite Index search.
 type Result struct {
-	Page    string
-	Score   float64
-	Snippet string
-	Line    int
+	Page     string
+	Score    float64
+	Snippet  string
+	Line     int
+	IsDirect bool // true if the page matched the query directly (BM25), false if graph-boosted only
 }
 
 // Index is the composite search index combining BM25, trigram fuzzy matching,
@@ -157,10 +158,11 @@ func (ix *Index) Search(query string, limit int) []Result {
 		referrer := referrers[e.name]
 		snippet, line := ix.buildSnippet(page, queryTerms, isDirect, referrer)
 		results = append(results, Result{
-			Page:    e.name,
-			Score:   e.score,
-			Snippet: snippet,
-			Line:    line,
+			Page:     e.name,
+			Score:    e.score,
+			Snippet:  snippet,
+			Line:     line,
+			IsDirect: isDirect,
 		})
 	}
 	return results

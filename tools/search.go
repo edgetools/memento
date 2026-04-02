@@ -67,37 +67,96 @@ func registerSearch(s *server.MCPServer, store *pages.Store, idx *index.Index) {
 		}
 
 		type resultEntry struct {
-			Page        string            `json:"page"`
-			Relevance   float64           `json:"relevance"`
-			Snippet     string            `json:"snippet"`
-			Line        int               `json:"line"`
-			LinkedPages []linkedPageEntry `json:"linked_pages"`
+			Page        string   `json:"page"`
+			Relevance   float64  `json:"relevance"`
+			Snippet     string   `json:"snippet"`
+			Line        int      `json:"line"`
+			LinkedPages []string `json:"linked_pages"`
 		}
 
-		results := make([]resultEntry, 0, len(rawResults))
+		// Separate direct BM25 matches from graph-boosted-only results.
+		// Graph-boosted pages are treated as linked page details, not top-level results.
+		directResults := rawResults[:0:0]
+		for _, r := range rawResults {
+			if r.IsDirect {
+				directResults = append(directResults, r)
+			}
+		}
+
+		// Collect the set of direct result page names (lowercased) for exclusion checks.
+		directPageNames := make(map[string]bool, len(directResults))
+		for _, r := range directResults {
+			directPageNames[strings.ToLower(r.Page)] = true
+		}
+
+		linkedPageDetails := make([]linkedPageEntry, 0)
+		// seenLinked tracks page names (lowercased) already added to linkedPageDetails.
+		seenLinked := make(map[string]bool)
+
+		// addLinkedDetail adds a page to linkedPageDetails if not already seen and
+		// not already a direct result. Returns whether it was added.
+		addLinkedDetail := func(name, snippet string, line int) bool {
+			key := strings.ToLower(name)
+			if seenLinked[key] || directPageNames[key] {
+				return false
+			}
+			seenLinked[key] = true
+			linkedPageDetails = append(linkedPageDetails, linkedPageEntry{
+				Page:    name,
+				Snippet: snippet,
+				Line:    line,
+			})
+			return true
+		}
+
+		// Add graph-boosted (non-direct) results to linkedPageDetails.
+		for _, r := range rawResults {
+			if !r.IsDirect {
+				addLinkedDetail(r.Page, r.Snippet, r.Line)
+			}
+		}
+
+		results := make([]resultEntry, 0, len(directResults))
 		tokenCount := 0
 
-		for _, r := range rawResults {
+		for _, r := range directResults {
 			relevance := 0.0
 			if topScore > 0 {
 				relevance = r.Score / topScore
 			}
 
-			// Build linked_pages from outbound wikilinks.
+			// Build linked_pages string list from outbound wikilinks.
 			linkedNames := idx.LinksTo(r.Page)
-			linkedPages := make([]linkedPageEntry, 0, len(linkedNames))
+			linkedPageNames := make([]string, 0, len(linkedNames))
+			newDetails := make([]linkedPageEntry, 0)
+			collectDetail := func(name string) {
+				lp, loadErr := store.Load(name)
+				if loadErr != nil {
+					return
+				}
+				key := strings.ToLower(lp.Name)
+				if !seenLinked[key] && !directPageNames[key] {
+					newDetails = append(newDetails, linkedPageEntry{
+						Page:    lp.Name,
+						Snippet: firstBodyParagraph(lp.Body),
+						Line:    2, // body starts at line 2 (line 1 is the heading)
+					})
+				}
+			}
 			for _, linkedName := range linkedNames {
 				lp, loadErr := store.Load(linkedName)
 				if loadErr != nil {
 					// Broken link — skip.
 					continue
 				}
-				snippet := firstBodyParagraph(lp.Body)
-				linkedPages = append(linkedPages, linkedPageEntry{
-					Page:    lp.Name,
-					Snippet: snippet,
-					Line:    2, // body starts at line 2 (line 1 is the heading)
-				})
+				linkedPageNames = append(linkedPageNames, lp.Name)
+				collectDetail(linkedName)
+			}
+			// Also collect co-linked pages: pages that link TO this result and their other outbound links.
+			for _, referrerName := range idx.LinkedFrom(r.Page) {
+				for _, coLinkedName := range idx.LinksTo(referrerName) {
+					collectDetail(coLinkedName)
+				}
 			}
 
 			entry := resultEntry{
@@ -105,28 +164,42 @@ func registerSearch(s *server.MCPServer, store *pages.Store, idx *index.Index) {
 				Relevance:   relevance,
 				Snippet:     r.Snippet,
 				Line:        r.Line,
-				LinkedPages: linkedPages,
+				LinkedPages: linkedPageNames,
 			}
 
-			// Apply token budget: count tokens in this entry's JSON representation.
+			// Apply token budget: count tokens for this entry plus any new linked page details.
 			if maxTokens > 0 {
 				entryJSON, marshalErr := json.Marshal(entry)
 				if marshalErr == nil {
 					entryTokens := len(strings.Fields(string(entryJSON)))
-					if tokenCount+entryTokens > maxTokens {
+					detailTokens := 0
+					for _, d := range newDetails {
+						dJSON, dErr := json.Marshal(d)
+						if dErr == nil {
+							detailTokens += len(strings.Fields(string(dJSON)))
+						}
+					}
+					if tokenCount+entryTokens+detailTokens > maxTokens {
 						break
 					}
-					tokenCount += entryTokens
+					tokenCount += entryTokens + detailTokens
 				}
 			}
 
+			// Commit new linked page details.
+			for _, d := range newDetails {
+				seenLinked[strings.ToLower(d.Page)] = true
+				linkedPageDetails = append(linkedPageDetails, d)
+			}
 			results = append(results, entry)
 		}
 
 		resp := struct {
-			Results []resultEntry `json:"results"`
+			Results           []resultEntry    `json:"results"`
+			LinkedPageDetails []linkedPageEntry `json:"linked_page_details"`
 		}{
-			Results: results,
+			Results:           results,
+			LinkedPageDetails: linkedPageDetails,
 		}
 
 		data, err := json.Marshal(resp)

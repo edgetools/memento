@@ -256,22 +256,30 @@ wins. Token counting is approximate (whitespace-split word count as a proxy).
       "relevance": 0.87,
       "snippet": "...typically the [[Enchanter]] is assigned mez duty during pulls...",
       "line": 14,
-      "linked_pages": [
-        {
-          "page": "Enchanter",
-          "snippet": "The enchanter is a utility class specializing in mesmerize...",
-          "line": 3
-        },
-        {
-          "page": "Pulling",
-          "snippet": "Pull strategy depends on available CC — [[Crowd Control]]...",
-          "line": 8
-        }
-      ]
+      "linked_pages": ["Enchanter", "Pulling"]
+    }
+  ],
+  "linked_page_details": [
+    {
+      "page": "Enchanter",
+      "snippet": "The enchanter is a utility class specializing in mesmerize...",
+      "line": 3
+    },
+    {
+      "page": "Pulling",
+      "snippet": "Pull strategy depends on available CC — [[Crowd Control]]...",
+      "line": 8
     }
   ]
 }
 ```
+
+`linked_pages` on each result is a name-only array of outbound links from that
+page. `linked_page_details` is a top-level, deduplicated list containing the
+snippet and line number for each linked page that is **not** already present in
+`results`. Pages that appear in `results` are excluded from `linked_page_details`
+because they already have their own snippet. Each linked page appears at most
+once in `linked_page_details`, regardless of how many results reference it.
 
 ---
 
