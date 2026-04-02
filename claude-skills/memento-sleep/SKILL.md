@@ -3,7 +3,17 @@ name: memento-sleep
 description: End-of-session sweep — capture everything worth keeping from this conversation into the brain
 ---
 
-This runs at the end of a session. Your job is to capture durable knowledge from the conversation into the memento brain. Err heavily on the side of writing. Noise and duplicates are okay — memento-dream exists to clean that up later.
+This runs at the end of a session. Your job is to capture durable knowledge from the conversation into the memento brain.
+
+## Durability test
+
+Before writing a page, ask: *if the codebase were deleted, would this still be useful to know?* If no, skip it.
+
+## What to skip
+
+- Ephemeral outcomes: test results, error messages seen and fixed, commands that were run
+- Information already derivable from the code or git history
+- Anything the user explicitly said not to remember
 
 ## What to capture
 
@@ -14,13 +24,7 @@ Go through the conversation and write down anything that might be useful in a fu
 - Relationships between concepts that were worked out
 - Things that were tried and didn't work, and why
 
-When in doubt, write it. The cost of a redundant page is low. The cost of losing a decision is high.
-
-## What to skip
-
-- Pure task status (what files were edited, what tests passed)
-- Information already derivable from the code or git history
-- Anything the user explicitly said not to remember
+Err heavily on the side of writing. Noise and duplicates are okay — memento-dream exists to clean that up later. The cost of a redundant page is low. The cost of losing a decision is high.
 
 ## How to write
 
