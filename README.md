@@ -191,6 +191,18 @@ Remove a page from the brain.
 }
 ```
 
+### `list_pages`
+Retrieve a sorted, paginated list of page names.
+
+```json
+{
+  "sort_by": "least_linked",
+  "limit": 50,
+  "offset": 0,
+  "filter": ["combat", "enchanter"]
+}
+```
+
 ---
 
 ## Design Philosophy
