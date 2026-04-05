@@ -87,29 +87,33 @@ Quit and relaunch to load the MCP server.
 
 Skills are prompts that define what a brain is *for*. The right skill set turns a directory of markdown files into a second brain, a project knowledge base, or something else entirely.
 
-Example skill sets are included in `example-skills/`:
+Example patterns (skills + rules) are included in `example-patterns/`:
 
 ```
-example-skills/
-├── memento/claude/     ← second brain skills for Claude
-│   ├── INTRO.md
-│   ├── memento-recall/SKILL.md
-│   ├── memento-snapshot/SKILL.md
-│   ├── memento-sleep/SKILL.md
-│   └── memento-dream/SKILL.md
-└── kb/claude/          ← knowledge brain skills for Claude
-    ├── INTRO.md
-    ├── kb-search/SKILL.md
-    └── kb-update/SKILL.md
+example-patterns/
+├── memento/claude/
+│   ├── skills/            ← second brain skills for Claude
+│   │   ├── memento-recall/SKILL.md
+│   │   ├── memento-snapshot/SKILL.md
+│   │   ├── memento-sleep/SKILL.md
+│   │   └── memento-dream/SKILL.md
+│   └── rules/             ← agent instructions
+│       └── memento.md
+└── kb/claude/
+    ├── skills/            ← knowledge brain skills for Claude
+    │   ├── kb-search/SKILL.md
+    │   └── kb-update/SKILL.md
+    └── rules/             ← agent instructions
+        └── kb.md
 ```
 
-Copy the relevant skills to your Claude skills directory (e.g. `.claude/skills/`). They're templates — adapt them to your workflow.
+Copy the relevant skills to your Claude skills directory (e.g. `.claude/skills/`) and add the rules to your Claude rules directory (e.g. `.claude/rules/`). They're templates — adapt them to your workflow.
 
 ### Introducing the brain to an agent
 
-Paste the relevant `INTRO.md` into a session, or add it to your project's `CLAUDE.md` so agents learn about it automatically:
+The rules files teach agents about the brain automatically:
 
-**Second brain** (`example-skills/memento/claude/INTRO.md`):
+**Second brain** (`example-patterns/memento/claude/rules/memento.md`):
 ```markdown
 ## memento: Second Brain
 
@@ -121,7 +125,7 @@ You have access to memento — a persistent knowledge store that spans sessions.
 - `/memento-dream` — Maintain and organize the brain
 ```
 
-**Knowledge brain** (`example-skills/kb/claude/INTRO.md`):
+**Knowledge brain** (`example-patterns/kb/claude/rules/kb.md`):
 ```markdown
 ## KB: Knowledge Brain
 
@@ -238,7 +242,7 @@ Retrieve a sorted, paginated list of page names. Sort by `alphabetical`, `least_
 ## Learn More
 
 - **DESIGN.md** — Complete specification: architecture, search algorithm, design decisions
-- **example-skills/** — Example skill sets for second brain and knowledge brain patterns
+- **example-patterns/** — Example patterns (skills + rules) for second brain and knowledge brain patterns
 
 ---
 

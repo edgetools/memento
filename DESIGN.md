@@ -687,11 +687,11 @@ different purpose. The MCP server name you register (e.g. `memento`, `kb`,
 `gamedesign`) should match the skill name prefix so agents naturally target the
 right brain when multiple instances are active.
 
-Example skill sets are located under `example-skills/`.
+Example skill sets are located under `example-patterns/`.
 
 ### Second Brain Pattern
 
-located at `example-skills/memento/claude/`
+located at `example-patterns/memento/claude/skills/`
 
 For a personal, cross-session memory store. Register the MCP server as `memento`.
 
@@ -710,7 +710,7 @@ For a personal, cross-session memory store. Register the MCP server as `memento`
 
 ### Knowledge Brain Pattern
 
-located at `example-skills/kb/claude/`
+located at `example-patterns/kb/claude/skills/`
 
 For a structured, project-scoped documentation workspace. Register the MCP server
 as `kb` (or a project-specific name like `gamedesign`). Use matching skill name
