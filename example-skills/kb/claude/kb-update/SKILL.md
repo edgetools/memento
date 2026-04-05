@@ -1,0 +1,44 @@
+---
+name: kb-update
+description: Update a knowledge brain page when the user asks to change the docs
+---
+
+The user wants to update the knowledge brain. This is deliberate documentation work — write accurately and completely, targeting the specific page the user has in mind.
+
+## Before writing
+
+1. If the user named a specific page, call `kb.get_page` to read the current content before changing it
+2. If the target page isn't clear, call `kb.search` to find the right one
+3. Understand what currently exists before deciding how to change it
+
+## How to update
+
+**To revise existing content:**
+- Use `kb.patch_page` with `replace` for targeted changes to specific passages
+- Use `kb.patch_page` with `replace_lines` when rewriting a section you've already read by line range
+- Use `kb.write_page` only when fully rewriting a page — be aware it replaces all existing content
+
+**To add new content to an existing page:**
+- Use `kb.patch_page` with `append` to add a section at the end
+- Use `kb.patch_page` with `prepend` to add content at the top
+
+**To create a new page:**
+- Use `kb.write_page` with the new page name and full content
+- Or use `kb.patch_page` with `append` if you only have partial content now
+
+**To rename a page:**
+- Use `kb.rename_page` — it atomically renames the file and updates all `[[wikilinks]]` across the brain that reference the old name
+- Never use delete + create for renames; that breaks link graph integrity
+
+## What to write
+
+- Be accurate and complete — this is documentation, not a notes dump
+- Use `[[wikilinks]]` to reference related pages by name
+- Page names should be descriptive phrases, not terse slugs — `[[Combat Turn Order]]` not `[[turns]]`
+- Don't pad content — a focused, accurate page is better than a long one
+
+## Rules
+
+- Always read the current page before replacing it
+- Confirm with the user before deleting a page
+- Report what changed so the user can verify the update was correct

@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// Register registers all Memento MCP tools with the given server.
+// Register registers all memento MCP tools with the given server.
 func Register(s *server.MCPServer, store *pages.Store, idx *index.Index) {
 	registerWritePage(s, store, idx, nil)
 	registerGetPage(s, store, idx)
@@ -20,7 +20,7 @@ func Register(s *server.MCPServer, store *pages.Store, idx *index.Index) {
 	registerListPages(s, store, idx)
 }
 
-// RegisterAutoCommit registers all Memento MCP tools with auto-commit enabled.
+// RegisterAutoCommit registers all memento MCP tools with auto-commit enabled.
 // After every successful write operation, a git commit is created in contentDir.
 func RegisterAutoCommit(s *server.MCPServer, store *pages.Store, idx *index.Index, contentDir string) {
 	ac := &autoCommitter{dir: contentDir}

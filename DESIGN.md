@@ -1,16 +1,27 @@
-# Memento: Second Brain MCP Server
+# memento: agent-powered knowledge store mcp server
 
 ## Overview
 
-A persistent, evolving knowledge store that agents use as long-term memory across
-planning sessions. Agents read from it to build context and write to it to capture
-decisions, terminology, and reasoning. The brain grows and reorganizes over time
-through agent interaction.
+A persistent, evolving knowledge store that agents can read from and write to
+across sessions. Agents search it to build context, update it to capture decisions
+and documentation, and reorganize it over time through interaction.
 
 **Repo:** `github.com/edgetools/memento` (the MCP server code)
 
-A memento "instance" (the actual brain content) is any git repo or directory the
-user points the server at. The server is generic; the content is personal.
+A **memento brain** is any directory of markdown files the server points at — a
+git repo, an existing Obsidian vault, or a new directory. The server is generic;
+the content and purpose are yours to define. Two common patterns:
+
+- **Second brain**: a personal, cross-session memory store. Agents capture
+  decisions, terminology, and reasoning during work and recall it in future
+  sessions. The brain grows organically through agent interaction.
+- **Knowledge brain**: a structured, project-scoped documentation workspace.
+  Agents read it for context and update it when content changes. Think of it
+  like Claude Projects — but local, git-backed, and Obsidian-browsable.
+
+What distinguishes them isn't the server or the file format — it's the skills
+you wire up and the MCP server name you register. The same memento binary serves
+both patterns.
 
 ---
 
@@ -46,7 +57,7 @@ concept's identity in the brain.
 **Filename is the page name.** The filename on disk is `{page name}.md` —
 the page name is used directly, preserving its original casing and spaces.
 For example, a page named "Crowd Control" lives at `Crowd Control.md`. This
-means `[[Crowd Control]]` links resolve to the correct file in both Memento
+means `[[Crowd Control]]` links resolve to the correct file in both memento
 and Obsidian without any mapping layer. Page names must not contain
 characters that are forbidden in filenames across operating systems:
 
@@ -652,7 +663,7 @@ memento/
 
 ---
 
-## What Memento Does NOT Do
+## What memento Does NOT Do
 
 - **No git operations by default.** With `-auto-commit`, the MCP commits after
   each write. Without it, committing is the caller's responsibility.
@@ -660,7 +671,7 @@ memento/
 - **No access control.** The MCP assumes it is the sole writer.
 - **No validation enforcement.** Broken links and orphaned pages are tolerated.
 - **No ordering or ranking of pages** outside of search relevance.
-- **No notifications or triggers.** Memento is a passive tool.
+- **No notifications or triggers.** memento is a passive tool.
 - **No Obsidian dependency.** Wikilink syntax is just a convention in markdown
   files. Obsidian can view the files if desired, but is not required.
 - **No disambiguation enforcement.** The MCP stores pages; skill instructions
@@ -668,65 +679,47 @@ memento/
 
 ---
 
-## Skills
+## Example Skill Patterns
 
-### Recall Skill
+Skills are prompts you wire to a memento brain instance. The skills define what
+the brain is *for* — swap them out and the same server serves a completely
+different purpose. The MCP server name you register (e.g. `memento`, `kb`,
+`gamedesign`) should match the skill name prefix so agents naturally target the
+right brain when multiple instances are active.
 
-located at `claude-skills/memento-recall/SKILL.md`
+Example skill sets are located under `example-skills/`.
 
-For use when starting work that might benefit from prior context.
+### Second Brain Pattern
 
-Core instructions:
-- When encountering a topic or term, search memento before making assumptions
-- Follow `[[links]]` in retrieved pages to build deeper understanding (the
-  Wikipedia rabbit hole pattern)
-- Use retrieved context to avoid re-deriving decisions already made
-- If memento doesn't have relevant content, proceed without it — don't block
+located at `example-skills/memento/claude/`
 
-### Snapshot Skill
+For a personal, cross-session memory store. Register the MCP server as `memento`.
 
-located at `claude-skills/memento-snapshot/SKILL.md`
+- **`memento-recall`** — Search the brain continuously during a task whenever a
+  term or concept surfaces that might have prior context. Follow `[[links]]` to
+  build deeper understanding. Use retrieved context to avoid re-deriving decisions
+  already made.
+- **`memento-snapshot`** — Jot a concept mid-task while the context is fresh. One
+  concept, one page, done in seconds. Uses `patch_page append` so no read-before-write
+  is needed — creates the page automatically if it doesn't exist.
+- **`memento-sleep`** — End-of-session sweep. Review the conversation and capture
+  durable knowledge: decisions, constraints, terminology, relationships. Err toward
+  writing; noise is cheap and `memento-dream` cleans it up later.
+- **`memento-dream`** — Dedicated maintenance. Find orphaned pages, consolidate
+  duplicates, split oversized pages, strengthen cross-links, rename poorly scoped pages.
 
-For use reflexively during a session to jot quick notes while context is fresh.
+### Knowledge Brain Pattern
 
-Core instructions:
-- Name the concept — use a descriptive phrase (`[[Retry Backoff Strategy]]`, not `[[retry]]`)
-- Write what you know right now — one sentence to one paragraph is enough
-- Add `[[wikilinks]]` to related concepts you know exist (or should exist)
-- Call `patch_page` with `append` — if the page doesn't exist it will be created automatically
+located at `example-skills/kb/claude/`
 
-### Sleep Skill
+For a structured, project-scoped documentation workspace. Register the MCP server
+as `kb` (or a project-specific name like `gamedesign`). Use matching skill name
+prefixes so agents target the right brain when multiple instances are active.
 
-located at `claude-skills/memento-sleep/SKILL.md`
-
-For use at the end of a planning session (Claude Desktop or Claude Code
-interactive).
-
-Core instructions:
-- Review the conversation for key concepts, decisions, and terminology
-- Search memento for existing pages related to those concepts
-- Update existing pages with new context, using `[[links]]` rather than
-  re-explaining concepts that already have pages
-- Create new pages for concepts that don't have one yet
-- Before writing a new page, search for the term — if a page exists with
-  different content (potential disambiguation), use a more descriptive name
-- Link everything together: new content should reference concept pages, and
-  concept pages should be updated to reference related concepts
-
-### Dream Skill
-
-located at `claude-skills/memento-dream/SKILL.md`
-
-For dedicated cleanup sessions.
-
-Core instructions:
-- Identify orphaned pages (no links in or out) and evaluate whether to link
-  or delete them
-- Find pages that re-explain concepts covered by other pages — consolidate
-  into the canonical page and replace redundant text with links
-- Break up pages that have grown too large into focused sub-pages
-- Strengthen cross-links where related concepts aren't yet connected
-- Delete pages that are no longer relevant
+- **`kb-search`** — Find relevant pages before answering or writing. Used
+  automatically when context might live in the knowledge brain.
+- **`kb-update`** — Write or revise a specific page when the user asks to update
+  the docs. Deliberate and targeted — not a session sweep.
 
 ---
 
@@ -853,7 +846,7 @@ genuinely different.
 
 **Why build a custom MCP instead of using an existing Obsidian MCP?**
 Existing Obsidian MCPs (`mcpvault`, `mcp-obsidian`) wrap Obsidian's REST API, which
-requires Obsidian to be running. Memento operates directly on the filesystem: no
+requires Obsidian to be running. memento operates directly on the filesystem: no
 GUI dependency, works in headless environments, works in CI, works wherever Claude
 Code runs. The `[[wikilink]]` convention is just markdown — Obsidian can view the
 files if desired but is never required.

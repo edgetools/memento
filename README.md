@@ -1,8 +1,26 @@
-# Memento — Second Brain MCP Server
+# memento — Agent-Powered Knowledge Bases in Markdown
 
-A persistent, evolving knowledge store that spans sessions. Record decisions, terminology, and reasoning in markdown pages linked with `[[wikilinks]]`. Your brain grows and stays organized through agent interaction.
+memento is an MCP server for building **agent-powered knowledge bases** from plain markdown files. Point it at any directory — a new folder, an existing Obsidian vault, a git repo — and agents can search, read, and write pages through a set of structured tools.
 
-**Works with any MCP client**, but examples shown are for Claude Code or Claude Desktop
+Because a memento brain is just markdown files with `[[wikilinks]]`, it is **natively Obsidian-compatible**: open the same directory in Obsidian and browse it visually, no configuration required. No Obsidian installation is needed to use memento — it operates directly on the filesystem.
+
+**Works with any MCP client.** Examples shown use Claude Code or Claude Desktop.
+
+---
+
+## What is a memento brain?
+
+A **memento brain** is a directory of markdown files that memento serves over MCP. Each page is a `.md` file identified by a human-readable name like "Crowd Control" or "Retry Backoff Strategy". Pages link to each other with `[[wikilinks]]`, forming a navigable knowledge graph.
+
+Two common patterns:
+
+### Second brain
+A personal, cross-session memory store. Agents capture decisions, terminology, and reasoning during work and recall it in future sessions. The brain grows organically — agents jot notes mid-task, sweep the conversation at the end, and periodically reorganize. This is the classic "second brain" use case.
+
+### Knowledge brain
+A structured, project-scoped documentation workspace — like Claude Projects, but local, git-backed, and Obsidian-browsable. Agents read it for context and update specific pages when content changes. Good for game design docs, project wikis, architecture records, or any living documentation that agents collaborate on.
+
+What makes them different is the **skills you wire up** and the **MCP server name you register** — not the server or the file format. The same memento binary serves both patterns.
 
 ---
 
@@ -11,82 +29,107 @@ A persistent, evolving knowledge store that spans sessions. Record decisions, te
 ### 1. Install the server
 
 ```bash
-go get github.com/edgetools/memento
+go install github.com/edgetools/memento@latest
 ```
 
-### 2. Create a brain directory
+### 2. Create or point at a brain directory
 
-The brain is any directory of markdown files — typically a git repo:
-
+**Starting a new second brain:**
 ```bash
 mkdir -p ~/my-brain
 cd ~/my-brain
 git init
 ```
 
-### 3. Register with Client
+**Using an existing Obsidian vault or project directory:**
+Just point memento at it — any directory of markdown files works as-is.
 
-#### Claude Example
+### 3. Register with your MCP client
 
-Add memento to your Claude settings in `~/.claude/claude.json` (or via the Claude settings UI under **MCP Servers**):
+The MCP server name you register becomes the tool prefix agents use. Name it to match your brain's purpose.
 
+**Second brain** (register as `memento`):
 ```json
 {
   "mcpServers": {
     "memento": {
       "command": "/path/to/memento",
-      "args": [
-        "-content-dir", "/path/to/my-brain",
-        "-auto-commit"
-      ]
+      "args": ["-content-dir", "/path/to/my-brain", "-auto-commit"]
     }
   }
 }
 ```
 
-Replace `/path/to/memento` and `/path/to/my-brain` with your actual paths. 
+**Knowledge brain** (register as `kb`, or a project-specific name):
+```json
+{
+  "mcpServers": {
+    "kb": {
+      "command": "/path/to/memento",
+      "args": ["-content-dir", "/path/to/my-project-docs"]
+    }
+  }
+}
+```
+
+Multiple brains can be active simultaneously — each registered under a different name, each with its own skill set.
 
 **Optional flags:**
-- `-auto-commit`: Automatically `git add` and `git commit` after every write. Omit if your brain directory is not a git repo.
+- `-auto-commit`: Automatically `git add` and `git commit` after every write. Requires the content directory to be inside a git repo.
 
-### 4. Restart Client
+### 4. Restart your client
 
-Quit and relaunch your client to load the MCP server.
+Quit and relaunch to load the MCP server.
 
 ---
 
-## Using Your Brain
+## Wiring Up Skills
 
-### Introduce memento to your session
+Skills are prompts that define what a brain is *for*. The right skill set turns a directory of markdown files into a second brain, a project knowledge base, or something else entirely.
 
-When you start working with your brain, paste the contents of `claude-skills/INTRO.md` into a session to introduce memento and its four example skills.
+Example skill sets are included in `example-skills/`:
 
-Alternatively, add this to your project's prompt file (e.g. `CLAUDE.md`) so agents automatically learn about memento when they start:
+```
+example-skills/
+├── memento/claude/     ← second brain skills for Claude
+│   ├── INTRO.md
+│   ├── memento-recall/SKILL.md
+│   ├── memento-snapshot/SKILL.md
+│   ├── memento-sleep/SKILL.md
+│   └── memento-dream/SKILL.md
+└── kb/claude/          ← knowledge brain skills for Claude
+    ├── INTRO.md
+    ├── kb-search/SKILL.md
+    └── kb-update/SKILL.md
+```
 
+Copy the relevant skills to your Claude skills directory (e.g. `.claude/skills/`). They're templates — adapt them to your workflow.
+
+### Introducing the brain to an agent
+
+Paste the relevant `INTRO.md` into a session, or add it to your project's `CLAUDE.md` so agents learn about it automatically:
+
+**Second brain** (`example-skills/memento/claude/INTRO.md`):
 ```markdown
-## Memento: Second Brain
+## memento: Second Brain
 
-You have access to memento — a persistent knowledge store that spans sessions. 
+You have access to memento — a persistent knowledge store that spans sessions.
 
-When you need to interact with your brain, you have four skills:
 - `/memento-recall` — Search the brain for prior context during a task
 - `/memento-snapshot` — Jot down a concept mid-task
 - `/memento-sleep` — Sweep the conversation at the end to capture durable knowledge
 - `/memento-dream` — Maintain and organize the brain
 ```
 
-### Use the example skills
+**Knowledge brain** (`example-skills/kb/claude/INTRO.md`):
+```markdown
+## KB: Knowledge Brain
 
-To use them, copy them to your claude skills directory (e.g. `.claude/skills/`).
+You have access to kb — a project knowledge base for this workspace.
 
-Four example skills are included in `claude-skills/`:
-
-- `memento-recall/SKILL.md` — Search for prior context mid-task
-- `memento-snapshot/SKILL.md` — Jot down a concept right now
-- `memento-sleep/SKILL.md` — Capture a session's knowledge at the end
-- `memento-dream/SKILL.md` — Maintain and organize the brain
-
-Each is a complete prompt you can invoke from Claude with `/memento-recall`, `/memento-snapshot`, etc. They're templates — feel free to adapt them to your workflow.
+- `/kb-search` — Search for relevant pages before answering or writing
+- `/kb-update` — Update a page when the user asks to change the docs
+```
 
 ---
 
@@ -106,68 +149,54 @@ Pages reference each other with `[[wikilinks]]`:
 [[Enchanter]] is the primary CC class, though [[Bard]] has limited CC.
 ```
 
-Wikilinks create bidirectional relationships in the graph. They serve as both navigation and declarations of relevance.
+Wikilinks create bidirectional relationships in the graph index. They serve as both navigation and search signal — a page linking to a concept is a deliberate declaration of relevance.
 
 ### Flat, freeform structure
 
-No hierarchy, no required templates. Pages are markdown files in a flat directory. Each page organizes its content however is most useful.
+No hierarchy, no required templates. Pages are markdown files in a flat directory. Each page organizes its content however is most useful. Discovery comes from search and graph traversal, not folder structure.
+
+### Obsidian compatibility
+
+A memento brain is a valid Obsidian vault. `[[wikilinks]]` resolve to files by name exactly as Obsidian expects. Open the content directory in Obsidian at any time to browse and edit visually — no setup required.
 
 ### Git as audit trail
 
-The brain directory is a git repo. Every write operation commits automatically (with `-auto-commit`), so the full history is always recoverable.
+Point memento at a git repo and use `-auto-commit` to record every write as a commit automatically. The full history of the brain is always recoverable.
 
 ---
 
-## Tools Available in Claude
-
-Your MCP provides these tools:
+## MCP Tools
 
 ### `search`
 Query the brain by keyword. Returns relevance-ranked results with contextual snippets and related pages.
 
 ```json
-{
-  "query": "enchanter crowd control",
-  "max_results": 10
-}
+{ "query": "enchanter crowd control", "max_results": 10 }
 ```
 
 ### `get_page`
 Fetch a page by name, or specific line ranges.
 
 ```json
-{
-  "page": "Crowd Control",
-  "lines": ["10-25", "45"]
-}
+{ "page": "Crowd Control", "lines": ["10-25", "45"] }
 ```
 
 ### `write_page`
 Create a new page or fully replace an existing one.
 
 ```json
-{
-  "page": "Enchanter",
-  "content": "The enchanter is a utility class specializing in [[Mez]] and [[Haste]] spells."
-}
+{ "page": "Enchanter", "content": "The enchanter specializes in [[Mez]] and [[Haste]]." }
 ```
 
 ### `patch_page`
-Targeted edits: replace text, replace lines, append, or prepend.
+Targeted edits: replace text, replace lines, append, or prepend. `append` and `prepend` create the page if it doesn't exist.
 
 ```json
 {
   "page": "Crowd Control",
   "operations": [
-    {
-      "op": "replace",
-      "old": "Enchanter is the only CC class",
-      "new": "[[Enchanter]] is the primary CC class"
-    },
-    {
-      "op": "append",
-      "content": "\n## Related Concepts\n\nSee [[Diminishing Returns]]."
-    }
+    { "op": "replace", "old": "Enchanter is the only CC class", "new": "[[Enchanter]] is the primary CC class" },
+    { "op": "append", "content": "\n## Related\n\nSee [[Diminishing Returns]]." }
   ]
 }
 ```
@@ -176,53 +205,43 @@ Targeted edits: replace text, replace lines, append, or prepend.
 Rename a page and update all `[[wikilinks]]` across the brain atomically.
 
 ```json
-{
-  "page": "Crowd Control",
-  "new_name": "Crowd Control Mechanics"
-}
+{ "page": "Crowd Control", "new_name": "Crowd Control Mechanics" }
 ```
 
 ### `delete_page`
 Remove a page from the brain.
 
 ```json
-{
-  "page": "Obsolete Concept"
-}
+{ "page": "Obsolete Concept" }
 ```
 
 ### `list_pages`
-Retrieve a sorted, paginated list of page names.
+Retrieve a sorted, paginated list of page names. Sort by `alphabetical`, `least_linked` (orphan discovery), or `most_linked` (hub concepts).
 
 ```json
-{
-  "sort_by": "least_linked",
-  "limit": 50,
-  "offset": 0,
-  "filter": ["combat", "enchanter"]
-}
+{ "sort_by": "least_linked", "limit": 50, "offset": 0 }
 ```
 
 ---
 
 ## Design Philosophy
 
-- **Readable over terse:** Page names are descriptive phrases, not slugs. `[[Aggro From Healing]]` is better than `[[aggro]]`.
 - **Links over tags:** Every concept worth tagging is worth having a page for. Wikilinks create navigable structure.
 - **Flat over hierarchical:** No premature categorization. Discovery comes from search and graph traversal.
 - **Freeform over templates:** Pages organize themselves. A one-sentence page is fine; it can grow later.
-- **Git as source of truth:** Markdown files are the canonical storage. The in-memory index is built from files, never the other way around.
+- **Readable names over terse slugs:** `[[Aggro From Healing]]` is better than `[[aggro]]`.
+- **Git as source of truth:** Markdown files are canonical. The in-memory index is built from files, never the other way around.
+- **Skills define purpose:** The server is neutral. What the brain is *for* is determined by the skills wired to it.
 
 ---
 
 ## Learn More
 
-- **DESIGN.md** — Complete specification of architecture, search algorithm, and design decisions
-- **claude-skills/INTRO.md** — Introduction prompt for agents learning about their second brain
-- **Example skills** — Real prompts for recall, snapshot, sleep, and dream workflows
+- **DESIGN.md** — Complete specification: architecture, search algorithm, design decisions
+- **example-skills/** — Example skill sets for second brain and knowledge brain patterns
 
 ---
 
 ## Feedback & Contributions
 
-This is early-stage. If you find bugs, have ideas, or want to contribute, reach out or open an issue.
+This is early-stage. If you find bugs, have ideas, or want to contribute, open an issue.
