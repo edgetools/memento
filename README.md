@@ -1,6 +1,6 @@
-# memento — Agent-Powered Knowledge Bases in Markdown
+# memento — agent-powered knowledge stores in markdown
 
-memento is an MCP server for building **agent-powered knowledge bases** from plain markdown files. Point it at any directory — a new folder, an existing Obsidian vault, a git repo — and agents can search, read, and write pages through a set of structured tools.
+memento is an MCP server for building **agent-powered knowledge stores** from plain markdown files. Point it at any directory — a new folder, an existing Obsidian vault, a git repo — and agents can search, read, and write pages through a set of structured tools.
 
 Because a memento brain is just markdown files with `[[wikilinks]]`, it is **natively Obsidian-compatible**: open the same directory in Obsidian and browse it visually, no configuration required. No Obsidian installation is needed to use memento — it operates directly on the filesystem.
 
