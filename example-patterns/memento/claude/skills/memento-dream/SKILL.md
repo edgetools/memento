@@ -1,6 +1,7 @@
 ---
 name: memento-dream
 description: Clean up and strengthen the memento brain — consolidate duplicates, fix orphans, improve cross-links
+disable-model-invocation: true
 ---
 
 You are doing a maintenance pass on the memento brain. Work through each task below. This is deliberate cleanup work — be conservative about deleting anything, but be aggressive about linking and consolidating.

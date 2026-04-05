@@ -1,6 +1,7 @@
 ---
 name: kb-update
 description: Update a knowledge brain page when the user asks to change the docs
+user-invocable: false
 ---
 
 The user wants to update the knowledge brain. This is deliberate documentation work — write accurately and completely, targeting the specific page the user has in mind.

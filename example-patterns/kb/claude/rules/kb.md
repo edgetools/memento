@@ -4,20 +4,8 @@ You have access to **kb** — a project knowledge base for this workspace. It co
 
 This brain is for **project-specific content** — not personal cross-session memory. If you have a second brain active (e.g. `memento`), use that for knowledge that cuts across projects. Use `kb` for content that lives with this project.
 
-When you need to interact with the knowledge brain, you have two skills:
+## Behaviors you do automatically
 
-## kb-search — Find relevant pages
+**Search before answering or writing** — whenever you're about to answer a question that might be documented, make a change with relevant prior decisions, or create something new, search the brain first. Use `kb.search` and `kb.get_page`. The `kb-search` skill has full guidance on when and how to search.
 
-Use this before answering questions or making changes when the answer might live in the knowledge brain. Search for relevant pages first, then use what you find to inform your response. Follow `[[wikilinks]]` in retrieved pages to related content.
-
-Uses `kb.search` and `kb.get_page`.
-
-## kb-update — Update a page
-
-Use this when the user asks you to update, revise, or add to the documentation. Target the specific page the user has in mind, or search first to find the right one. Write deliberately — this is structured documentation, not a notes dump.
-
-Uses `kb.write_page`, `kb.patch_page`, and related `kb` tools.
-
----
-
-**The core idea:** The knowledge brain is a shared workspace between you and the user. Search it to stay informed. Update it when the user asks. Keep it deliberate and accurate.
+**Update when the user asks** — when the user asks you to update, revise, or add to the documentation, write to the brain deliberately and accurately. The `kb-update` skill has full guidance on how to make targeted edits.

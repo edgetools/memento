@@ -111,29 +111,10 @@ Copy the relevant skills to your Claude skills directory (e.g. `.claude/skills/`
 
 ### Introducing the brain to an agent
 
-The rules files teach agents about the brain automatically:
+The rules files teach agents about the brain automatically. They describe the agent's always-on behaviors and point to the relevant skills for full guidance on each one.
 
-**Second brain** (`example-patterns/memento/claude/rules/memento.md`):
-```markdown
-## memento: Second Brain
-
-You have access to memento — a persistent knowledge store that spans sessions.
-
-- `/memento-recall` — Search the brain for prior context during a task
-- `/memento-snapshot` — Jot down a concept mid-task
-- `/memento-sleep` — Sweep the conversation at the end to capture durable knowledge
-- `/memento-dream` — Maintain and organize the brain
-```
-
-**Knowledge brain** (`example-patterns/kb/claude/rules/kb.md`):
-```markdown
-## KB: Knowledge Brain
-
-You have access to kb — a project knowledge base for this workspace.
-
-- `/kb-search` — Search for relevant pages before answering or writing
-- `/kb-update` — Update a page when the user asks to change the docs
-```
+- `example-patterns/memento/claude/rules/memento.md` — second brain rules
+- `example-patterns/kb/claude/rules/kb.md` — knowledge brain rules
 
 ---
 

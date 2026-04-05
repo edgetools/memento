@@ -1,6 +1,7 @@
 ---
 name: memento-snapshot
 description: Jot something into the brain right now, mid-task, while the context is fresh
+user-invocable: false
 ---
 
 You just learned something worth keeping. Write it down now, before the moment passes.

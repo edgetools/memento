@@ -1,6 +1,7 @@
 ---
 name: kb-search
 description: Search the knowledge brain for relevant pages before answering or writing
+user-invocable: false
 ---
 
 The knowledge brain contains project documentation — pages, design docs, reference material, and anything else the project has recorded. Search it before making assumptions about how things work or what has already been decided.

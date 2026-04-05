@@ -1,6 +1,7 @@
 ---
 name: memento-recall
 description: Consult the memento brain whenever you encounter a term or concept that may have prior context
+user-invocable: false
 ---
 
 The memento brain is your long-term memory across sessions. Treat it as the first place to look whenever you encounter a term, concept, or decision that might have prior context — not just once at the start of a task, but continuously as new concepts surface.

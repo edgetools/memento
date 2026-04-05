@@ -1,6 +1,7 @@
 ---
 name: memento-sleep
 description: End-of-session sweep — capture everything worth keeping from this conversation into the brain
+disable-model-invocation: true
 ---
 
 This runs at the end of a session. Your job is to capture durable knowledge from the conversation into the memento brain.
