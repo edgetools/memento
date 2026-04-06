@@ -234,6 +234,10 @@ func TestAutoCommitSelectiveStaging(t *testing.T) {
 		committed := gitFilesInLatestCommit(t, repoDir)
 		committedStr := strings.Join(committed, "\n")
 
+		// The OLD filename must appear in the commit as a staged deletion.
+		assert.Contains(t, committedStr, "Crowd Control.md",
+			"rename_page: old page filename must be staged (as a deletion) in the commit")
+
 		// The new filename for the renamed page must appear in the commit.
 		assert.Contains(t, committedStr, "Crowd Control Mechanics.md",
 			"rename_page: new page filename must be staged in the commit")
@@ -273,6 +277,10 @@ func TestAutoCommitSelectiveStaging(t *testing.T) {
 
 		committed := gitFilesInLatestCommit(t, repoDir)
 		committedStr := strings.Join(committed, "\n")
+
+		// The OLD filename must appear in the commit as a staged deletion.
+		assert.Contains(t, committedStr, "Orphan Page.md",
+			"rename_page (no linkers): old page filename must be staged (as a deletion) in the commit")
 
 		// The new filename must appear in the commit.
 		assert.Contains(t, committedStr, "Orphan Page Renamed.md",
