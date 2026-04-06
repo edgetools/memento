@@ -215,7 +215,7 @@ func registerPatchPage(s *server.MCPServer, store *pages.Store, idx *index.Index
 		}
 
 		if ac != nil {
-			if commitErr := ac.commit(fmt.Sprintf("memento: patched %q", updatedPage.Name)); commitErr != nil {
+			if commitErr := ac.commit(fmt.Sprintf("memento: patched %q", updatedPage.Name), []string{store.FilePath(updatedPage.Name)}); commitErr != nil {
 				resp.CommitFailures = append(resp.CommitFailures, commitErr.Error())
 			}
 		}

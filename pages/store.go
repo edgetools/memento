@@ -24,6 +24,13 @@ func (s *Store) filePath(name string) string {
 	return filepath.Join(s.dir, NameToFilename(name))
 }
 
+// FilePath returns the absolute filesystem path for the page with the given
+// name. The path is derived deterministically from the name; the file does not
+// need to exist.
+func (s *Store) FilePath(name string) string {
+	return s.filePath(name)
+}
+
 // resolvePath finds the on-disk path for a page by name using
 // case-insensitive, whitespace-normalized matching. It first checks
 // the exact path; if that does not exist it scans the directory for a
@@ -54,15 +61,26 @@ func (s *Store) resolvePath(name string) (string, bool) {
 // Write creates or fully replaces a page. The file heading is managed
 // internally: any existing H1 in content is replaced with "# name", and
 // if no H1 is present one is prepended. Returns the parsed Page on success.
+//
+// If a file with the same normalized name already exists at a different path
+// (e.g. different casing), the old file is removed so only one file remains.
 func (s *Store) Write(name, content string) (Page, error) {
 	if _, err := ValidateName(name); err != nil {
 		return Page{}, fmt.Errorf("write page %q: %w", name, err)
 	}
 
 	fileContent := manageHeading(name, content)
+	newPath := s.filePath(name)
 
-	path := s.filePath(name)
-	if err := os.WriteFile(path, []byte(fileContent), 0644); err != nil {
+	// If an existing file matches by normalized name but lives at a different
+	// path (different casing), remove it before writing the new file.
+	if existingPath, ok := s.resolvePath(name); ok && existingPath != newPath {
+		if err := os.Remove(existingPath); err != nil {
+			return Page{}, fmt.Errorf("write page %q: remove old file: %w", name, err)
+		}
+	}
+
+	if err := os.WriteFile(newPath, []byte(fileContent), 0644); err != nil {
 		return Page{}, fmt.Errorf("write page %q: %w", name, err)
 	}
 

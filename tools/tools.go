@@ -38,8 +38,9 @@ type autoCommitter struct {
 	dir string
 }
 
-func (ac *autoCommitter) commit(message string) error {
-	addCmd := exec.Command("git", "add", "-A")
+func (ac *autoCommitter) commit(message string, files []string) error {
+	addArgs := append([]string{"add", "--"}, files...)
+	addCmd := exec.Command("git", addArgs...)
 	addCmd.Dir = ac.dir
 	if out, err := addCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git add failed: %w: %s", err, out)

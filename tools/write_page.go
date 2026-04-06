@@ -67,7 +67,7 @@ func registerWritePage(s *server.MCPServer, store *pages.Store, idx *index.Index
 		}
 
 		if ac != nil {
-			if commitErr := ac.commit(fmt.Sprintf("memento: updated %q", p.Name)); commitErr != nil {
+			if commitErr := ac.commit(fmt.Sprintf("memento: updated %q", p.Name), []string{store.FilePath(p.Name)}); commitErr != nil {
 				resp.CommitFailures = append(resp.CommitFailures, commitErr.Error())
 			}
 		}

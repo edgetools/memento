@@ -53,6 +53,10 @@ func registerRenamePage(s *server.MCPServer, store *pages.Store, idx *index.Inde
 		}
 		oldName := srcPage.Name
 
+		// Capture file paths before modifying the store.
+		oldFilePath := store.FilePath(oldName)
+		newFilePath := store.FilePath(newName)
+
 		// Rename in the store (updates filename and heading).
 		if err := store.Rename(oldName, newName); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -63,8 +67,11 @@ func registerRenamePage(s *server.MCPServer, store *pages.Store, idx *index.Inde
 
 		// Scan all pages and replace [[OldName]] wikilinks with [[NewName]].
 		// Also add the renamed page and any updated pages to the index.
+		// Collect paths of all modified files for the selective commit.
 		pattern := regexp.MustCompile(`(?i)\[\[` + regexp.QuoteMeta(oldName) + `\]\]`)
 		replacement := "[[" + newName + "]]"
+
+		commitFiles := []string{oldFilePath, newFilePath}
 
 		for _, p := range store.Scan() {
 			newBody := pattern.ReplaceAllLiteralString(p.Body, replacement)
@@ -73,6 +80,7 @@ func registerRenamePage(s *server.MCPServer, store *pages.Store, idx *index.Inde
 				updated, writeErr := store.Write(p.Name, newBody)
 				if writeErr == nil {
 					idx.Add(updated)
+					commitFiles = append(commitFiles, store.FilePath(p.Name))
 				}
 			} else if pages.NamesMatch(p.Name, newName) {
 				// This is the renamed page with no self-referential links — add to index.
@@ -90,7 +98,7 @@ func registerRenamePage(s *server.MCPServer, store *pages.Store, idx *index.Inde
 		}
 
 		if ac != nil {
-			if commitErr := ac.commit(fmt.Sprintf("memento: renamed %q to %q", oldName, newName)); commitErr != nil {
+			if commitErr := ac.commit(fmt.Sprintf("memento: renamed %q to %q", oldName, newName), commitFiles); commitErr != nil {
 				resp.CommitFailures = append(resp.CommitFailures, commitErr.Error())
 			}
 		}

@@ -585,12 +585,13 @@ Starts the MCP server over stdio.
 
 **Optional flags:**
 
-- `-auto-commit`: Automatically `git add` and `git commit` after every write
-  operation (`write_page`, `patch_page`, `rename_page`, `delete_page`). Commit
-  messages are descriptive but terse (e.g., `memento: updated "Crowd Control"`).
-  On startup with this flag, the MCP verifies that `-content-dir` is inside a
-  git repo and exits with an error if it is not. Without this flag, no git
-  operations are performed.
+- `-auto-commit`: After every write operation (`write_page`, `patch_page`,
+  `rename_page`, `delete_page`), stage only the specific files that operation
+  modified and create a git commit. Commit messages are descriptive but terse
+  (e.g., `memento: updated "Crowd Control"`). Changes outside the content
+  directory are never staged. On startup with this flag, the MCP verifies that
+  `-content-dir` is inside a git repo and exits with an error if it is not.
+  Without this flag, no git operations are performed.
 
 ---
 
@@ -871,7 +872,10 @@ Git history is the audit trail for brain content, but remembering to commit is
 friction that discourages use. Auto-commit makes every write operation produce a
 git commit transparently, so the history builds itself. Per-tool-call commits (not
 batched) keep the granularity useful: each commit corresponds to one logical change.
-The flag is opt-in because not every content directory will be a git repo.
+Only the files that operation modified are staged — never unrelated changes in the
+wider repository. This keeps memento's commits clean even when the content
+directory is a subdirectory of a larger repo. The flag is opt-in because not every
+content directory will be a git repo.
 
 **Why `list_pages` instead of relying solely on `search`?**
 Dream and recall skills use search as the primary discovery mechanism, but search

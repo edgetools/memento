@@ -38,6 +38,7 @@ func registerDeletePage(s *server.MCPServer, store *pages.Store, idx *index.Inde
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		canonicalName := p.Name
+		pageFilePath := store.FilePath(canonicalName)
 
 		if err := store.Delete(pageName); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -53,7 +54,7 @@ func registerDeletePage(s *server.MCPServer, store *pages.Store, idx *index.Inde
 		}
 
 		if ac != nil {
-			if commitErr := ac.commit(fmt.Sprintf("memento: deleted %q", canonicalName)); commitErr != nil {
+			if commitErr := ac.commit(fmt.Sprintf("memento: deleted %q", canonicalName), []string{pageFilePath}); commitErr != nil {
 				resp.CommitFailures = append(resp.CommitFailures, commitErr.Error())
 			}
 		}

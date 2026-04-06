@@ -75,7 +75,7 @@ The MCP server name you register becomes the tool prefix agents use. Name it to 
 Multiple brains can be active simultaneously — each registered under a different name, each with its own skill set.
 
 **Optional flags:**
-- `-auto-commit`: Automatically `git add` and `git commit` after every write. Requires the content directory to be inside a git repo.
+- `-auto-commit`: Automatically stage and `git commit` only the files modified by each write operation, after every write. Requires the content directory to be inside a git repo. Changes outside the content directory are never staged.
 
 ### 4. Restart your client
 
