@@ -8,27 +8,27 @@ The user wants to update the knowledge brain. This is deliberate documentation w
 
 ## Before writing
 
-1. If the user named a specific page, call `kb.get_page` to read the current content before changing it
-2. If the target page isn't clear, call `kb.search` to find the right one
+1. If the user named a specific page, call `get_page` to read the current content before changing it
+2. If the target page isn't clear, call `search` to find the right one, or `list_pages` if you need an exhaustive and paginated list of topics.
 3. Understand what currently exists before deciding how to change it
 
 ## How to update
 
 **To revise existing content:**
-- Use `kb.patch_page` with `replace` for targeted changes to specific passages
-- Use `kb.patch_page` with `replace_lines` when rewriting a section you've already read by line range
-- Use `kb.write_page` only when fully rewriting a page — be aware it replaces all existing content
+- Use `patch_page` with `replace` for targeted changes to specific passages
+- Use `patch_page` with `replace_lines` when rewriting a section you've already read by line range
+- Use `write_page` only when fully rewriting a page — be aware it replaces all existing content
 
 **To add new content to an existing page:**
-- Use `kb.patch_page` with `append` to add a section at the end
-- Use `kb.patch_page` with `prepend` to add content at the top
+- Use `patch_page` with `append` to add a section at the end
+- Use `patch_page` with `prepend` to add content at the top
 
 **To create a new page:**
-- Use `kb.write_page` with the new page name and full content
-- Or use `kb.patch_page` with `append` if you only have partial content now
+- Use `write_page` with the new page name and full content
+- Or use `patch_page` with `append` if you only have partial content now
 
 **To rename a page:**
-- Use `kb.rename_page` — it atomically renames the file and updates all `[[wikilinks]]` across the brain that reference the old name
+- Use `rename_page` — it atomically renames the file and updates all `[[wikilinks]]` across the brain that reference the old name
 - Never use delete + create for renames; that breaks link graph integrity
 
 ## What to write

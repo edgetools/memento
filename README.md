@@ -101,7 +101,7 @@ example-patterns/
 │       └── memento.md
 └── kb/claude/
     ├── skills/            ← knowledge brain skills for Claude
-    │   ├── kb-search/SKILL.md
+    │   ├── kb-explore/SKILL.md
     │   └── kb-update/SKILL.md
     └── rules/             ← agent instructions
         └── kb.md

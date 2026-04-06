@@ -716,7 +716,7 @@ For a structured, project-scoped documentation workspace. Register the MCP serve
 as `kb` (or a project-specific name like `gamedesign`). Use matching skill name
 prefixes so agents target the right brain when multiple instances are active.
 
-- **`kb-search`** — Find relevant pages before answering or writing. Used
+- **`kb-explore`** — Find relevant pages before answering or writing. Used
   automatically when context might live in the knowledge brain.
 - **`kb-update`** — Write or revise a specific page when the user asks to update
   the docs. Deliberate and targeted — not a session sweep.
