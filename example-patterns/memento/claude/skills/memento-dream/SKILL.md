@@ -9,13 +9,16 @@ You are doing a maintenance pass on the memento brain. Work through each task be
 ## Task 1: Find orphaned pages
 
 Get a complete picture of the brain first:
-- Use `list_pages` to enumerate all pages — this gives you every page name, not just what search surfaces
-- `list_pages` is paginated; keep calling it with the returned cursor until you've seen all pages
-- For each page, check `linked_from` in `get_page` results to identify inbound links
-- Pages with zero inbound links are orphan candidates
+- Use `list_pages sort_by: "least_linked"` to surface orphan candidates at the top — pages with zero or few inbound links
+- `list_pages` is paginated; keep calling it until you've seen all pages
+- For each candidate, check `linked_from` in `get_page` results to confirm zero inbound links
+
+Before deciding what to do with each orphan, check its `last_updated` timestamp (returned by `get_page`):
+- **Recently updated**: the page was likely just created and hasn't been wired into the graph yet — find 2–3 pages that should reference it and add `[[wikilinks]]` via `patch_page`
+- **Old and unlinked**: the page has been isolated for a long time — it's more likely obsolete, a merge candidate, or something that was captured and never followed up on
 
 For each orphan, decide:
-- **Link it**: if it's a real concept, find 2–3 pages that should reference it and add `[[wikilinks]]` via `patch_page`
+- **Link it**: if it's a real concept worth keeping, find pages that should reference it and add `[[wikilinks]]`
 - **Merge it**: if its content belongs on another page, append it there and delete the orphan
 - **Delete it**: if the concept is obsolete or irrelevant, use `delete_page`
 
@@ -50,8 +53,10 @@ Look for pages whose names are ambiguous, too terse, or no longer match what the
 
 ## Task 6: Fix stale content
 
-Look for pages that reference outdated decisions or terminology:
-- Update passages that contradict current understanding
+Work through the brain systematically from oldest to newest:
+- Use `list_pages sort_by: "oldest"` to get pages ordered by last write timestamp, oldest first — this is your work queue
+- `list_pages` is paginated; use `offset` to walk through it
+- Read each page and update passages that contradict current understanding or reference outdated decisions
 - After a rename, verify no stale references to the old name remain
 
 ## Rules

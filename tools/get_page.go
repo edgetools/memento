@@ -62,17 +62,19 @@ func registerGetPage(s *server.MCPServer, store *pages.Store, idx *index.Index) 
 		if linesVal == nil {
 			// Full page response.
 			resp := struct {
-				Page       string   `json:"page"`
-				Content    string   `json:"content"`
-				TotalLines int      `json:"total_lines"`
-				LinksTo    []string `json:"links_to"`
-				LinkedFrom []string `json:"linked_from"`
+				Page        string   `json:"page"`
+				Content     string   `json:"content"`
+				TotalLines  int      `json:"total_lines"`
+				LastUpdated string   `json:"last_updated,omitempty"`
+				LinksTo     []string `json:"links_to"`
+				LinkedFrom  []string `json:"linked_from"`
 			}{
-				Page:       p.Name,
-				Content:    fullContent,
-				TotalLines: totalLines,
-				LinksTo:    linksTo,
-				LinkedFrom: linkedFrom,
+				Page:        p.Name,
+				Content:     fullContent,
+				TotalLines:  totalLines,
+				LastUpdated: lastUpdatedForFile(store.FilePath(p.Name)),
+				LinksTo:     linksTo,
+				LinkedFrom:  linkedFrom,
 			}
 			data, err := json.Marshal(resp)
 			if err != nil {
@@ -116,17 +118,19 @@ func registerGetPage(s *server.MCPServer, store *pages.Store, idx *index.Index) 
 		}
 
 		resp := struct {
-			Page       string    `json:"page"`
-			Sections   []section `json:"sections"`
-			TotalLines int       `json:"total_lines"`
-			LinksTo    []string  `json:"links_to"`
-			LinkedFrom []string  `json:"linked_from"`
+			Page        string    `json:"page"`
+			Sections    []section `json:"sections"`
+			TotalLines  int       `json:"total_lines"`
+			LastUpdated string    `json:"last_updated,omitempty"`
+			LinksTo     []string  `json:"links_to"`
+			LinkedFrom  []string  `json:"linked_from"`
 		}{
-			Page:       p.Name,
-			Sections:   sections,
-			TotalLines: totalLines,
-			LinksTo:    linksTo,
-			LinkedFrom: linkedFrom,
+			Page:        p.Name,
+			Sections:    sections,
+			TotalLines:  totalLines,
+			LastUpdated: lastUpdatedForFile(store.FilePath(p.Name)),
+			LinksTo:     linksTo,
+			LinkedFrom:  linkedFrom,
 		}
 		data, err := json.Marshal(resp)
 		if err != nil {

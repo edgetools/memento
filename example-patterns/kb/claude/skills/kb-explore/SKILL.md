@@ -27,6 +27,7 @@ Explore any time you:
 - Prefer the brain's existing terminology over inventing new names for the same concepts
 - Treat documented decisions as settled unless the user is explicitly revisiting them
 - If a retrieved page contradicts your assumptions, surface the conflict rather than silently overriding either
+- When multiple results cover the same topic with conflicting content, use `last_updated` (included in every search result) to identify the more recently written page — it's likely the more authoritative source
 
 ## Rules
 

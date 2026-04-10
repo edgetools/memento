@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/edgetools/memento/index"
 	"github.com/edgetools/memento/pages"
@@ -16,7 +17,7 @@ func registerListPages(s *server.MCPServer, store *pages.Store, idx *index.Index
 	tool := mcp.NewTool("list_pages",
 		mcp.WithDescription("Returns a paginated, sorted list of page names with no content — names only."),
 		mcp.WithString("sort_by",
-			mcp.Description(`Sort order: "alphabetical" (default), "least_linked", or "most_linked".`),
+			mcp.Description(`Sort order: "alphabetical" (default), "least_linked", "most_linked", "newest", or "oldest". newest/oldest sort by last_updated and return page objects instead of name strings.`),
 		),
 		mcp.WithNumber("limit",
 			mcp.Description("Maximum number of page names to return (default: 50)."),
@@ -78,7 +79,59 @@ func registerListPages(s *server.MCPServer, store *pages.Store, idx *index.Index
 			}
 		}
 
-		// Sort.
+		// For newest/oldest: resolve timestamps, sort by time, and return objects.
+		if sortBy == "newest" || sortBy == "oldest" {
+			type timedEntry struct {
+				name        string
+				lastUpdated string
+				t           time.Time
+			}
+			entries := make([]timedEntry, len(filtered))
+			for i, p := range filtered {
+				lu := lastUpdatedForFile(store.FilePath(p.Name))
+				t, _ := time.Parse(time.RFC3339, lu)
+				entries[i] = timedEntry{name: p.Name, lastUpdated: lu, t: t}
+			}
+			sort.SliceStable(entries, func(i, j int) bool {
+				if sortBy == "newest" {
+					return entries[i].t.After(entries[j].t)
+				}
+				return entries[i].t.Before(entries[j].t)
+			})
+
+			total := len(entries)
+			start := min(offset, total)
+			end := min(start+limit, total)
+			window := entries[start:end]
+
+			type pageEntry struct {
+				Page        string `json:"page"`
+				LastUpdated string `json:"last_updated,omitempty"`
+			}
+			objects := make([]pageEntry, len(window))
+			for i, e := range window {
+				objects[i] = pageEntry{Page: e.name, LastUpdated: e.lastUpdated}
+			}
+
+			resp := struct {
+				Pages  []pageEntry `json:"pages"`
+				Total  int         `json:"total"`
+				Offset int         `json:"offset"`
+				Limit  int         `json:"limit"`
+			}{
+				Pages:  objects,
+				Total:  total,
+				Offset: offset,
+				Limit:  limit,
+			}
+			data, err := json.Marshal(resp)
+			if err != nil {
+				return mcp.NewToolResultError("internal error marshaling response: " + err.Error()), nil
+			}
+			return mcp.NewToolResultText(string(data)), nil
+		}
+
+		// Sort for alphabetical / most_linked / least_linked.
 		switch sortBy {
 		case "most_linked":
 			sort.SliceStable(filtered, func(i, j int) bool {

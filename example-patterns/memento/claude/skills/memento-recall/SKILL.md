@@ -27,6 +27,7 @@ Recall your memories any time you:
 
 - Adopt the brain's terminology rather than inventing your own names for the same concepts
 - Use it to enhance context surrounding the topic being discussed (the user might be asking about something in your second brain, but not the project itself)
+- When multiple results cover the same concept with conflicting content, use `last_updated` (included in every search result) to identify the more recent capture — prefer it when there's tension between older and newer understanding
 
 ## Rules
 

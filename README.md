@@ -153,14 +153,14 @@ Point memento at a git repo and use `-auto-commit` to record every write as a co
 ## MCP Tools
 
 ### `search`
-Query the brain by keyword. Returns relevance-ranked results with contextual snippets and related pages.
+Query the brain by keyword. Returns relevance-ranked results with contextual snippets, related pages, and `last_updated` timestamps for each result and linked page detail.
 
 ```json
 { "query": "enchanter crowd control", "max_results": 10 }
 ```
 
 ### `get_page`
-Fetch a page by name, or specific line ranges.
+Fetch a page by name, or specific line ranges. Response includes `last_updated` (ISO 8601 UTC timestamp of the last content-modifying write).
 
 ```json
 { "page": "Crowd Control", "lines": ["10-25", "45"] }
@@ -201,10 +201,10 @@ Remove a page from the brain.
 ```
 
 ### `list_pages`
-Retrieve a sorted, paginated list of page names. Sort by `alphabetical`, `least_linked` (orphan discovery), or `most_linked` (hub concepts).
+Retrieve a sorted, paginated list of pages. Sort by `alphabetical`, `least_linked` (orphan discovery), `most_linked` (hub concepts), `newest` (most recently written first), or `oldest` (least recently written first). The `newest` and `oldest` sorts return page objects with `last_updated` timestamps; other sorts return flat name strings.
 
 ```json
-{ "sort_by": "least_linked", "limit": 50, "offset": 0 }
+{ "sort_by": "oldest", "limit": 50, "offset": 0 }
 ```
 
 ---

@@ -61,14 +61,16 @@ func registerSearch(s *server.MCPServer, store *pages.Store, idx *index.Index) {
 		}
 
 		type linkedPageEntry struct {
-			Page    string `json:"page"`
-			Snippet string `json:"snippet"`
-			Line    int    `json:"line"`
+			Page        string `json:"page"`
+			LastUpdated string `json:"last_updated,omitempty"`
+			Snippet     string `json:"snippet"`
+			Line        int    `json:"line"`
 		}
 
 		type resultEntry struct {
 			Page        string   `json:"page"`
 			Relevance   float64  `json:"relevance"`
+			LastUpdated string   `json:"last_updated,omitempty"`
 			Snippet     string   `json:"snippet"`
 			Line        int      `json:"line"`
 			LinkedPages []string `json:"linked_pages"`
@@ -102,9 +104,10 @@ func registerSearch(s *server.MCPServer, store *pages.Store, idx *index.Index) {
 			}
 			seenLinked[key] = true
 			linkedPageDetails = append(linkedPageDetails, linkedPageEntry{
-				Page:    name,
-				Snippet: snippet,
-				Line:    line,
+				Page:        name,
+				LastUpdated: lastUpdatedForFile(store.FilePath(name)),
+				Snippet:     snippet,
+				Line:        line,
 			})
 			return true
 		}
@@ -130,9 +133,10 @@ func registerSearch(s *server.MCPServer, store *pages.Store, idx *index.Index) {
 				key := strings.ToLower(lp.Name)
 				if !seenLinked[key] && !directPageNames[key] {
 					newDetails = append(newDetails, linkedPageEntry{
-						Page:    lp.Name,
-						Snippet: firstBodyParagraph(lp.Body),
-						Line:    2, // body starts at line 2 (line 1 is the heading)
+						Page:        lp.Name,
+						LastUpdated: lastUpdatedForFile(store.FilePath(lp.Name)),
+						Snippet:     firstBodyParagraph(lp.Body),
+						Line:        2, // body starts at line 2 (line 1 is the heading)
 					})
 				}
 			}
@@ -155,6 +159,7 @@ func registerSearch(s *server.MCPServer, store *pages.Store, idx *index.Index) {
 			entry := resultEntry{
 				Page:        r.Page,
 				Relevance:   relevance,
+				LastUpdated: lastUpdatedForFile(store.FilePath(r.Page)),
 				Snippet:     r.Snippet,
 				Line:        r.Line,
 				LinkedPages: linkedPageNames,

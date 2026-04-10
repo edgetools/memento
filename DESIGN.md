@@ -251,6 +251,44 @@ the query term.
 
 ---
 
+## Timestamps
+
+Every page carries a `last_updated` field — an ISO 8601 UTC timestamp (ending
+in `Z`) reflecting the last time that page's content was modified. It is
+included in the output of `get_page`, `search`, and `list_pages` (for
+`newest`/`oldest` sorts).
+
+### What counts as a content-modifying write
+
+- `write_page`
+- `patch_page` (any operation)
+- `rename_page` (rewrites the page heading)
+
+### Timestamp source
+
+The MCP derives `last_updated` from external sources in priority order:
+
+1. **Git commit time** (when the content directory is inside a git repo): the
+   commit timestamp of the most recent commit that touched the page's file
+   (`git log -1` for that file). This is the preferred source — commit
+   timestamps survive `git clone` and `git pull`, making them reliable across
+   machines.
+
+2. **Filesystem mtime** (fallback): used when the content directory is not a
+   git repo, or when a file exists in the directory but has never been
+   committed (e.g. a newly created page not yet staged).
+
+3. **Omitted**: if neither source is available, `last_updated` is omitted from
+   the response rather than returning a zero value or fabricated date.
+
+**Known limitation:** When `-auto-commit` is not enabled and the user edits a
+page outside the MCP (e.g. in Obsidian) without committing, the git-derived
+timestamp will reflect the last committed state rather than the actual last
+edit. The last committed state is the most recent *settled* content, which is
+the intended behavior — uncommitted changes are in-flight.
+
+---
+
 ## Tools
 
 ### `search`
@@ -279,6 +317,7 @@ wins. Token counting is approximate (whitespace-split word count as a proxy).
     {
       "page": "Crowd Control",
       "relevance": 0.87,
+      "last_updated": "2024-11-03T09:15:42Z",
       "snippet": "...typically the [[Enchanter]] is assigned mez duty during pulls...",
       "line": 14,
       "linked_pages": ["Enchanter", "Pulling"]
@@ -287,11 +326,13 @@ wins. Token counting is approximate (whitespace-split word count as a proxy).
   "linked_page_details": [
     {
       "page": "Enchanter",
+      "last_updated": "2024-08-21T14:07:30Z",
       "snippet": "The enchanter is a utility class specializing in mesmerize...",
       "line": 3
     },
     {
       "page": "Pulling",
+      "last_updated": "2023-05-12T11:44:00Z",
       "snippet": "Pull strategy depends on available CC — [[Crowd Control]]...",
       "line": 8
     }
@@ -305,6 +346,10 @@ snippet and line number for each linked page that is **not** already present in
 `results`. Pages that appear in `results` are excluded from `linked_page_details`
 because they already have their own snippet. Each linked page appears at most
 once in `linked_page_details`, regardless of how many results reference it.
+
+`last_updated` is an ISO 8601 UTC timestamp (ending in `Z`) reflecting the last
+time each page's content was modified. See the Timestamps section below for how
+it is derived.
 
 ---
 
@@ -338,6 +383,7 @@ Page name lookup is case-insensitive with whitespace normalization.
   "page": "Crowd Control",
   "content": "# Crowd Control\n\nCrowd control (CC) refers to abilities that limit enemy actions...\n\n[[Enchanter]] is the primary CC class...",
   "total_lines": 142,
+  "last_updated": "2024-11-03T09:15:42Z",
   "links_to": ["Enchanter", "Mez", "Pulling", "Root"],
   "linked_from": ["Party Composition", "Dungeon Strategy"]
 }
@@ -353,6 +399,7 @@ Page name lookup is case-insensitive with whitespace normalization.
     { "lines": "95-110", "content": "Root spells share diminishing returns with..." }
   ],
   "total_lines": 142,
+  "last_updated": "2024-11-03T09:15:42Z",
   "links_to": ["Enchanter", "Mez", "Pulling", "Root"],
   "linked_from": ["Party Composition", "Dungeon Strategy"]
 }
@@ -549,6 +596,12 @@ All fields are optional. Defaults: `sort_by: "alphabetical"`, `limit: 50`,
   orphans and isolated concepts — the primary entry point for dream sessions.
 - **`most_linked`**: pages with the most inbound links first. Surfaces hub
   concepts — useful for recall sessions building broad context.
+- **`newest`**: pages sorted by `last_updated` descending — most recently
+  written first. Useful for finding pages that were recently added or edited
+  but may not yet have been linked into the graph.
+- **`oldest`**: pages sorted by `last_updated` ascending — least recently
+  written first. Useful for stale-content review, working through the oldest
+  pages systematically.
 
 **`filter`**: array of keywords. Page name must contain all keywords
 (case-insensitive, AND match). Narrows the list to pages whose names contain
@@ -558,7 +611,9 @@ every specified term. This is name substring matching, not search — use
 **`limit`** and **`offset`**: standard pagination. An agent can walk the full
 page list by incrementing `offset` by `limit` until `offset >= total`.
 
-**Output:**
+**Output format depends on `sort_by`.** For `alphabetical`, `least_linked`,
+and `most_linked`, `pages` is a flat array of name strings:
+
 ```json
 {
   "pages": ["Crowd Control", "Enchanter", "Pulling"],
@@ -568,8 +623,24 @@ page list by incrementing `offset` by `limit` until `offset >= total`.
 }
 ```
 
+For `newest` and `oldest`, `pages` is an array of objects that include
+`last_updated` so timestamps are available without a separate `get_page` call:
+
+```json
+{
+  "pages": [
+    { "page": "Crowd Control", "last_updated": "2026-04-01T10:00:00Z" },
+    { "page": "Enchanter",     "last_updated": "2025-09-14T08:44:21Z" },
+    { "page": "Pulling",       "last_updated": "2023-02-28T17:03:55Z" }
+  ],
+  "total": 247,
+  "offset": 0,
+  "limit": 50
+}
+```
+
 `total` is the count of matching pages before pagination is applied, so the
-agent knows how many more pages remain. Names only — no snippets.
+agent knows how many more pages remain.
 
 ---
 
@@ -890,3 +961,28 @@ Pagination and name-only output keep token cost low even over large brains.
 The search tool encapsulates ranking logic (BM25 + trigram fallback + graph boost) that
 agents shouldn't need to reason about. The agent asks a question; the MCP returns
 ranked, contextualized results.
+
+**Why expose `last_updated` timestamps?**
+Agents interacting with the brain have no shell or git access — the MCP is their only
+window into the content. Without timestamps, an agent reading a page has no way to know
+whether a decision was captured last week or three years ago. This affects how
+confidently it should overwrite, how much it should trust the content as current, and
+how it should prioritize maintenance work. Surfacing timestamps on every read tool lets
+agents calibrate trust without extra round trips.
+
+**Why derive timestamps from git rather than storing them internally?**
+Git commit timestamps are durable — they survive `git clone` and `git pull`, keeping
+timestamps consistent across machines. Storing timestamps in file content or a sidecar
+would create a second source of truth that could drift. The MCP is stateless between
+restarts; any internal store would be lost. Filesystem mtime is the fallback for
+non-git or uncommitted files, which covers single-machine setups and newly created pages.
+
+**Why does `list_pages` return objects for `newest`/`oldest` but strings for other sorts?**
+The alphabetical, `least_linked`, and `most_linked` sorts are link-graph and
+name-oriented — the agent typically needs the names to make subsequent `get_page` or
+`search` calls, and timestamps add no signal. Returning flat strings keeps token cost
+low and preserves backward compatibility. The `newest` and `oldest` sorts are
+timestamp-oriented by nature: the agent needs the timestamps to act on the sort order
+(e.g. to skip pages updated recently, or to prioritize pages not touched in years).
+Embedding `last_updated` in the list entry avoids a separate `get_page` call per page
+for the common case of working through a timestamp-sorted list.
