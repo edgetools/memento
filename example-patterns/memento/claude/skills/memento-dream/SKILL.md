@@ -8,9 +8,10 @@ You are doing a maintenance pass on the memento brain. Work through each task be
 
 ## Task 1: Find orphaned pages
 
-Search for pages that are rarely or never linked to:
-- Use `search` with broad terms to survey the brain
-- For each page you find, check `linked_from` in `get_page` results
+Get a complete picture of the brain first:
+- Use `list_pages` to enumerate all pages — this gives you every page name, not just what search surfaces
+- `list_pages` is paginated; keep calling it with the returned cursor until you've seen all pages
+- For each page, check `linked_from` in `get_page` results to identify inbound links
 - Pages with zero inbound links are orphan candidates
 
 For each orphan, decide:

@@ -1,42 +1,54 @@
 ---
 name: memento-sleep
-description: End-of-session sweep — capture everything worth keeping from this conversation into the brain
+description: End-of-session sweep — capture everything worth keeping from this conversation into the right brain
 disable-model-invocation: true
 ---
 
-This runs at the end of a session. Your job is to capture durable knowledge from the conversation into the memento brain.
+This runs at the end of a session. Your job is to capture durable knowledge from the conversation into the appropriate brain(s).
 
-## Durability test
+## Step 1: Route before you write
 
-Before writing a page, ask: *if the codebase were deleted, would this still be useful to know?* If no, skip it.
+Ask two questions for each thing worth capturing:
 
-## What to skip
+**Is it cross-project?** — Would this be useful in a completely different project, or does it only make sense in this one?
+- Cross-project → memento brain
+- Project-specific → kb (if active), otherwise skip or memento as a fallback
 
+**Is a kb brain active?** — Check whether kb tools are available. If yes, project-specific content (design decisions, architecture, feature notes, implementation rationale) belongs there, not in memento.
+
+### Write to memento when:
+- The concept spans projects or sessions — terminology, vocabulary, mental models
+- It's about *how you work* — preferences, rules, patterns Claude established with this user
+- It's a decision or constraint that would matter even if this codebase were replaced
+- There's no kb active and the content is worth preserving
+
+### Write to kb when a kb is active and content is:
+- Design or architecture decisions specific to this project
+- Feature behavior, data models, or implementation rationale
+- Anything that belongs in project documentation
+
+### Skip entirely:
 - Ephemeral outcomes: test results, error messages seen and fixed, commands that were run
 - Information already derivable from the code or git history
 - Anything the user explicitly said not to remember
 
-## What to capture
+## Step 2: Write
 
-Go through the conversation and write down anything that might be useful in a future session:
-- Concepts, terms, or domain vocabulary that were introduced or clarified
-- Decisions made and why
-- Constraints, requirements, or rules that were established
-- Relationships between concepts that were worked out
-- Things that were tried and didn't work, and why
+**For memento** (`mcp__memento__patch_page`):
+- Use `patch_page` with `append` for every page — creates the page if it doesn't exist, appends safely if it does
+- Never use `write_page` blindly — it fully replaces any existing page, silently destroying accumulated content
+- Page names should be descriptive phrases, not terse slugs — `[[Retry Backoff Strategy]]` not `[[retry]]`
+- Add `[[wikilinks]]` to connect related concepts, even if the linked page doesn't exist yet
+- A one-sentence page is fine — capture now, elaborate later
 
-Err heavily on the side of writing. Noise and duplicates are okay — memento-dream exists to clean that up later. The cost of a redundant page is low. The cost of losing a decision is high.
-
-## How to write
-
-- Call `patch_page` with `append` for every page — it creates the page automatically if it doesn't exist, and appends safely if it does
-- Never use `write_page` blindly — it fully replaces any existing page with the same name, silently destroying accumulated content
-- Page names should be descriptive phrases, not terse slugs — `[[Aggro From Healing]]` not `[[aggro]]`
-- Add `[[wikilinks]]` to connect concepts to each other, even if the linked page doesn't exist yet
-- A one-sentence page is fine — capture the concept now, elaborate later
+**For kb** (e.g. `mcp__kb__patch_page`):
+- Same write mechanics, but kb is for accurate documentation — be more deliberate
+- Read the existing page first if you're adding to something that likely already exists
 
 ## Rules
 
 - Speed over perfection
-- Don't block on ambiguity — make a call and move on
+- Err on the side of writing to memento — noise and duplicates are okay; memento-dream cleans that up
+- Be more selective for kb — it's documentation, not a notes dump
+- Don't block on ambiguity — make a routing call and move on
 - Don't report every page written; just do it
