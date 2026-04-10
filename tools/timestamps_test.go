@@ -322,41 +322,6 @@ func TestGetPageLastUpdated(t *testing.T) {
 			"last_updated must use mtime when the file is in a git repo but not yet committed")
 	})
 
-	// rename_updates_last_updated verifies that rename_page advances last_updated.
-	// Renaming rewrites the file's heading (# New Name), which is a content write
-	// and must update the timestamp.
-	t.Run("rename_updates_last_updated", func(t *testing.T) {
-		t.Parallel()
-		c, _, _, dir := setupTestServerAndDir(t) // non-git for deterministic mtime control
-
-		callTool(t, c, "write_page", map[string]any{
-			"page":    "Rename Ts Source",
-			"content": "Content for rename timestamp test.",
-		})
-
-		// Pin the mtime to a specific past time so we can tell whether the rename
-		// advanced it.
-		pastTime := time.Date(2022, 3, 10, 8, 0, 0, 0, time.UTC)
-		setFileMtime(t, pageFilePath(dir, "Rename Ts Source"), pastTime)
-
-		callTool(t, c, "rename_page", map[string]any{
-			"page":     "Rename Ts Source",
-			"new_name": "Rename Ts Target",
-		})
-
-		// The renamed page rewrites the heading, so last_updated must be newer
-		// than the pinned past time.
-		result := callTool(t, c, "get_page", map[string]any{"page": "Rename Ts Target"})
-		var resp getPageFullRespWithTS
-		parseJSON(t, result, &resp)
-
-		require.NotEmpty(t, resp.LastUpdated)
-		ts, err := time.Parse(time.RFC3339, resp.LastUpdated)
-		require.NoError(t, err)
-
-		assert.True(t, ts.After(pastTime),
-			"rename_page rewrites the heading and must advance last_updated past the pinned time")
-	})
 }
 
 // ---- TestSearchLastUpdated --------------------------------------------------
@@ -699,10 +664,71 @@ func TestListPagesTimestamp(t *testing.T) {
 		}
 	})
 
-	// ---- content-modifying writes update the timestamp -----------------------
+	// pagination_works_with_oldest_sort verifies that limit, offset, and total work
+	// correctly when sort_by is oldest. Results must not overlap across pages and
+	// total must reflect the full count before pagination.
+	t.Run("pagination_works_with_oldest_sort", func(t *testing.T) {
+		t.Parallel()
+		c, _, _, dir := setupTestServerAndDir(t)
 
-	// write_page_updates_last_updated verifies that calling write_page (a
-	// content-modifying operation) advances the last_updated timestamp.
+		// Create 5 pages with distinct mtimes so ordering is deterministic.
+		for i := range 5 {
+			name := fmt.Sprintf("Oldest Pag Page %d", i+1)
+			callTool(t, c, "write_page", map[string]any{"page": name, "content": "Content."})
+			setFileMtime(t, pageFilePath(dir, name),
+				time.Date(2020+i, 1, 1, 0, 0, 0, 0, time.UTC))
+		}
+
+		// First window: limit 2, offset 0.
+		result1 := callTool(t, c, "list_pages", map[string]any{
+			"sort_by": "oldest",
+			"limit":   2,
+			"offset":  0,
+		})
+		var resp1 listPagesTimestampResp
+		parseJSON(t, result1, &resp1)
+
+		assert.Equal(t, 5, resp1.Total, "total must reflect all 5 pages before pagination")
+		require.Len(t, resp1.Pages, 2, "limit 2 must return exactly 2 pages")
+		assert.Equal(t, 0, resp1.Offset)
+		assert.Equal(t, 2, resp1.Limit)
+
+		// Second window: limit 2, offset 2.
+		result2 := callTool(t, c, "list_pages", map[string]any{
+			"sort_by": "oldest",
+			"limit":   2,
+			"offset":  2,
+		})
+		var resp2 listPagesTimestampResp
+		parseJSON(t, result2, &resp2)
+
+		require.Len(t, resp2.Pages, 2)
+		assert.Equal(t, 2, resp2.Offset)
+
+		// Pages must not overlap across pagination windows.
+		window1 := make(map[string]bool)
+		for _, p := range resp1.Pages {
+			window1[p.Page] = true
+		}
+		for _, p := range resp2.Pages {
+			assert.False(t, window1[p.Page],
+				"pagination must not return the same page in two windows: %q appears in both", p.Page)
+		}
+	})
+}
+
+// ---- TestTimestampUpdates ---------------------------------------------------
+
+// TestTimestampUpdates verifies that every content-modifying operation listed in
+// the change request (write_page, patch_page any-op, rename_page) advances the
+// last_updated timestamp visible via get_page. Each subtest pins the file mtime
+// to a known past time after the initial write, then performs the modifying
+// operation, and asserts that last_updated is strictly after the pinned time.
+func TestTimestampUpdates(t *testing.T) {
+	t.Parallel()
+
+	// write_page_updates_last_updated verifies that write_page (used to fully
+	// replace a page's content) advances the last_updated timestamp.
 	t.Run("write_page_updates_last_updated", func(t *testing.T) {
 		t.Parallel()
 		c, _, _, dir := setupTestServerAndDir(t)
@@ -712,11 +738,11 @@ func TestListPagesTimestamp(t *testing.T) {
 			"content": "Original content.",
 		})
 
-		// Pin the mtime to a known past time.
+		// Pin the mtime to a known past time so the subsequent write is detectable.
 		pastTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 		setFileMtime(t, pageFilePath(dir, "Write Updates Ts"), pastTime)
 
-		// Write again — this is a content-modifying operation that must update the timestamp.
+		// Write again — this is a content-modifying operation that must advance last_updated.
 		callTool(t, c, "write_page", map[string]any{
 			"page":    "Write Updates Ts",
 			"content": "Updated content.",
@@ -733,30 +759,28 @@ func TestListPagesTimestamp(t *testing.T) {
 			"last_updated %q must be newer than the pinned past time after write_page", resp.LastUpdated)
 	})
 
-	// patch_page_updates_last_updated verifies that patch_page (a content-modifying
-	// operation) also advances the last_updated timestamp.
-	t.Run("patch_page_updates_last_updated", func(t *testing.T) {
+	// patch_page_replace_updates_last_updated verifies that patch_page with the
+	// replace operation advances the last_updated timestamp.
+	t.Run("patch_page_replace_updates_last_updated", func(t *testing.T) {
 		t.Parallel()
 		c, _, _, dir := setupTestServerAndDir(t)
 
 		callTool(t, c, "write_page", map[string]any{
-			"page":    "Patch Updates Ts",
+			"page":    "Patch Replace Updates Ts",
 			"content": "Original content.",
 		})
 
-		// Pin the mtime to a known past time.
 		pastTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-		setFileMtime(t, pageFilePath(dir, "Patch Updates Ts"), pastTime)
+		setFileMtime(t, pageFilePath(dir, "Patch Replace Updates Ts"), pastTime)
 
-		// Patch the page — this is a content-modifying operation.
 		callTool(t, c, "patch_page", map[string]any{
-			"page": "Patch Updates Ts",
+			"page": "Patch Replace Updates Ts",
 			"operations": []map[string]any{
 				{"op": "replace", "old": "Original content.", "new": "Patched content."},
 			},
 		})
 
-		result := callTool(t, c, "get_page", map[string]any{"page": "Patch Updates Ts"})
+		result := callTool(t, c, "get_page", map[string]any{"page": "Patch Replace Updates Ts"})
 		var resp getPageFullRespWithTS
 		parseJSON(t, result, &resp)
 
@@ -764,7 +788,47 @@ func TestListPagesTimestamp(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.True(t, ts.After(pastTime),
-			"last_updated %q must be newer than the pinned past time after patch_page", resp.LastUpdated)
+			"last_updated %q must be newer than the pinned past time after patch_page replace", resp.LastUpdated)
+	})
+
+	// patch_page_append_updates_last_updated verifies that patch_page with the
+	// append operation also advances last_updated. The append op is the primary
+	// "fire and forget" write path and creates the page if it does not yet exist —
+	// both the create-on-write and the append-to-existing cases must update the
+	// timestamp.
+	t.Run("patch_page_append_updates_last_updated", func(t *testing.T) {
+		t.Parallel()
+		c, _, _, dir := setupTestServerAndDir(t)
+
+		// First append creates the page (create-on-write).
+		callTool(t, c, "patch_page", map[string]any{
+			"page": "Patch Append Updates Ts",
+			"operations": []map[string]any{
+				{"op": "append", "content": "Initial note."},
+			},
+		})
+
+		// Pin the mtime to a known past time.
+		pastTime := time.Date(2020, 6, 1, 0, 0, 0, 0, time.UTC)
+		setFileMtime(t, pageFilePath(dir, "Patch Append Updates Ts"), pastTime)
+
+		// Second append adds to the existing page — must still advance last_updated.
+		callTool(t, c, "patch_page", map[string]any{
+			"page": "Patch Append Updates Ts",
+			"operations": []map[string]any{
+				{"op": "append", "content": "\n\nAppended note."},
+			},
+		})
+
+		result := callTool(t, c, "get_page", map[string]any{"page": "Patch Append Updates Ts"})
+		var resp getPageFullRespWithTS
+		parseJSON(t, result, &resp)
+
+		ts, err := time.Parse(time.RFC3339, resp.LastUpdated)
+		require.NoError(t, err)
+
+		assert.True(t, ts.After(pastTime),
+			"last_updated %q must be newer than the pinned past time after patch_page append", resp.LastUpdated)
 	})
 
 	// rename_page_updates_last_updated verifies that rename_page advances
