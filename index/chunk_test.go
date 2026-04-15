@@ -185,6 +185,35 @@ func TestChunkPage(t *testing.T) {
 			"no headings + two large paragraphs should produce 2+ chunks via fallback split")
 	})
 
+	t.Run("paragraph_fallback_small_chunks_merge", func(t *testing.T) {
+		t.Parallel()
+		// No ## headings → paragraph fallback. First paragraph is below the 50-token
+		// minimum; second is above it. The small paragraph must merge forward into the
+		// large paragraph, producing a single chunk. This verifies that minimum-size
+		// merging applies to the paragraph-fallback split path, not just the heading path.
+		raw := "# Doc\n\n" + below50words + "\n\n" + above50words
+		p := pages.Parse("doc", []byte(raw))
+		chunks := index.ChunkPage(p)
+		require.Len(t, chunks, 1,
+			"small paragraph (< 50 tokens) via fallback split should merge forward into the large paragraph")
+		assert.Contains(t, chunks[0].Text, below50words,
+			"merged chunk should contain the small paragraph content")
+		assert.Contains(t, chunks[0].Text, above50words,
+			"merged chunk should contain the large paragraph content")
+	})
+
+	t.Run("triple_newline_counts_as_paragraph_break", func(t *testing.T) {
+		t.Parallel()
+		// The spec states paragraph breaks are "two or more consecutive newlines"
+		// (\n\n or \n\n\n, etc.). Three consecutive newlines must also trigger a
+		// paragraph split in the fallback path.
+		raw := "# Doc\n\n" + above50words + "\n\n\n" + above50words
+		p := pages.Parse("doc", []byte(raw))
+		chunks := index.ChunkPage(p)
+		require.True(t, len(chunks) >= 2,
+			"triple newline (\\n\\n\\n) should count as a paragraph break and produce 2+ chunks")
+	})
+
 	t.Run("paragraph_fallback_not_used_when_headings_exist", func(t *testing.T) {
 		t.Parallel()
 		// When ## headings are present, paragraph breaks inside a section must NOT split.
@@ -256,6 +285,41 @@ func TestChunkPage(t *testing.T) {
 		chunks := index.ChunkPage(p)
 		require.Len(t, chunks, 1,
 			"all sections below minimum should cascade-merge into a single chunk")
+	})
+
+	t.Run("small_chunk_merge_preserves_full_line_range", func(t *testing.T) {
+		t.Parallel()
+		// A small section (< 50 tokens) merges forward into the following large section.
+		// The merged chunk must have StartLine = 1 and EndLine = last line of the page,
+		// proving the line range expands to cover all merged content.
+		raw := "# Doc\n\n" +
+			"## Small Section\n" + below50words + "\n\n" +
+			"## Large Section\n" + above50words
+		p := pages.Parse("doc", []byte(raw))
+		chunks := index.ChunkPage(p)
+		require.Len(t, chunks, 1, "small+large should merge into a single chunk")
+		totalLines := strings.Count(raw, "\n") + 1
+		assert.Equal(t, 1, chunks[0].StartLine,
+			"merged chunk StartLine must be 1 (spans from the beginning of the page)")
+		assert.Equal(t, totalLines, chunks[0].EndLine,
+			"merged chunk EndLine must equal the last line of the page")
+	})
+
+	t.Run("small_last_chunk_merge_preserves_full_line_range", func(t *testing.T) {
+		t.Parallel()
+		// A large section followed by a small final section; the small section merges backward.
+		// The merged chunk must span the full page from line 1 to the last line.
+		raw := "# Doc\n\n" +
+			"## Large Section\n" + above50words + "\n\n" +
+			"## Small Section\n" + below50words
+		p := pages.Parse("doc", []byte(raw))
+		chunks := index.ChunkPage(p)
+		require.Len(t, chunks, 1, "small last section should merge backward into one chunk")
+		totalLines := strings.Count(raw, "\n") + 1
+		assert.Equal(t, 1, chunks[0].StartLine,
+			"merged chunk StartLine must be 1 (spans from the beginning of the page)")
+		assert.Equal(t, totalLines, chunks[0].EndLine,
+			"merged chunk EndLine must equal the last line of the page")
 	})
 
 	// ── Code block: headings inside fenced blocks are not split points ────────
