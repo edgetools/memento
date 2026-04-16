@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/edgetools/memento/embed"
@@ -300,15 +301,134 @@ func TestModel_EmbedBatch(t *testing.T) {
 	t.Run("large_batch_returns_all_vectors", func(t *testing.T) {
 		t.Parallel()
 		// The spec says EmbedBatch may use multiple passes for large batches.
-		// Regardless of internal batching strategy, all vectors must be returned.
+		// Regardless of internal batching strategy, all vectors must be returned
+		// with correct dimensionality — a buggy multi-pass implementation could
+		// return the right count but with empty or wrong-length vectors.
 		texts := make([]string, 50)
 		for i := range texts {
 			texts[i] = strings.Repeat("word ", i+1) // vary lengths
 		}
 		vecs, err := testModel.EmbedBatch(texts)
 		require.NoError(t, err)
-		assert.Len(t, vecs, 50,
+		require.Len(t, vecs, 50,
 			"large batch should return all 50 vectors regardless of internal batch size")
+		for i, vec := range vecs {
+			assert.Equalf(t, testModel.Dimensions(), len(vec),
+				"vector at index %d has wrong length: got %d, want %d",
+				i, len(vec), testModel.Dimensions())
+		}
+	})
+}
+
+// ── Concurrency ───────────────────────────────────────────────────────────────
+
+func TestModel_Concurrency(t *testing.T) {
+	t.Parallel()
+
+	t.Run("concurrent_embed_calls_are_safe", func(t *testing.T) {
+		t.Parallel()
+		// The model is loaded once at startup and shared across all index
+		// operations. Embedding queries and chunks arrives concurrently from
+		// the MCP server goroutines, so Embed must be goroutine-safe.
+		const goroutines = 10
+		text := "concurrent embedding safety test"
+
+		var wg sync.WaitGroup
+		results := make([][]float32, goroutines)
+		errors := make([]error, goroutines)
+
+		for i := 0; i < goroutines; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				results[idx], errors[idx] = testModel.Embed(text)
+			}(i)
+		}
+		wg.Wait()
+
+		for i := 0; i < goroutines; i++ {
+			require.NoErrorf(t, errors[i], "goroutine %d: Embed returned error", i)
+			assert.Equalf(t, testModel.Dimensions(), len(results[i]),
+				"goroutine %d: vector has wrong length", i)
+		}
+	})
+
+	t.Run("concurrent_embed_batch_calls_are_safe", func(t *testing.T) {
+		t.Parallel()
+		// EmbedBatch at startup embeds many chunks in parallel; goroutine safety
+		// must hold for batch calls too.
+		const goroutines = 5
+		texts := []string{"alpha", "beta", "gamma"}
+
+		var wg sync.WaitGroup
+		errors := make([]error, goroutines)
+		lengths := make([]int, goroutines)
+
+		for i := 0; i < goroutines; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				vecs, err := testModel.EmbedBatch(texts)
+				errors[idx] = err
+				if err == nil {
+					lengths[idx] = len(vecs)
+				}
+			}(i)
+		}
+		wg.Wait()
+
+		for i := 0; i < goroutines; i++ {
+			require.NoErrorf(t, errors[i], "goroutine %d: EmbedBatch returned error", i)
+			assert.Equalf(t, len(texts), lengths[i],
+				"goroutine %d: wrong number of vectors returned", i)
+		}
+	})
+}
+
+// ── Unicode / non-ASCII input ─────────────────────────────────────────────────
+
+func TestModel_Embed_Unicode(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unicode_text_does_not_error", func(t *testing.T) {
+		t.Parallel()
+		// Real markdown content includes Unicode: emoji, accented characters,
+		// CJK, and other non-ASCII text. The tokenizer must not panic or error.
+		unicodeInputs := []string{
+			"日本語テキスト",                              // Japanese
+			"Ünïcödé chàracters with diacritics",   // Latin with diacritics
+			"deployment 🚀 pipeline with emoji",     // Emoji
+			"中文内容 — Chinese content",               // Chinese + em dash
+			"αβγ — Greek letters in documentation", // Greek
+		}
+		for _, input := range unicodeInputs {
+			input := input
+			t.Run("", func(t *testing.T) {
+				t.Parallel()
+				vec, err := testModel.Embed(input)
+				require.NoErrorf(t, err, "Embed(%q) must not error on Unicode input", input)
+				assert.Equalf(t, testModel.Dimensions(), len(vec),
+					"Embed(%q) must return a correctly-sized vector", input)
+			})
+		}
+	})
+
+	t.Run("unicode_text_produces_non_zero_vector", func(t *testing.T) {
+		t.Parallel()
+		// Even for Unicode input the model should produce a meaningful vector,
+		// not silently return zeros (which would indicate a tokenizer failure).
+		vec, err := testModel.Embed("deployment 🚀 pipeline")
+		require.NoError(t, err)
+		var sumAbs float32
+		for _, v := range vec {
+			if v < 0 {
+				sumAbs -= v
+			} else {
+				sumAbs += v
+			}
+		}
+		assert.Greater(t, sumAbs, float32(0),
+			"Unicode input must produce a non-zero embedding vector")
 	})
 }
 
