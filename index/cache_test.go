@@ -1,6 +1,7 @@
 package index_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -155,8 +156,9 @@ func TestLoadCache_CorruptFile_ReturnsError(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(path, []byte("this is not valid gob data !!!"), 0o644))
 
-	_, err := index.LoadCache(path, testModelID, testSentexVersion, testDims)
+	loaded, err := index.LoadCache(path, testModelID, testSentexVersion, testDims)
 	assert.Error(t, err, "corrupt file should return an error")
+	assert.Empty(t, loaded, "corrupt file should return nil/empty entries alongside the error")
 }
 
 // ---------------------------------------------------------------------------
@@ -341,8 +343,8 @@ func TestSaveLoadCache_ManyEntries(t *testing.T) {
 			}
 		}
 		entries[i] = index.CacheEntry{
-			PageName:    "page-" + string(rune('A'+i%26)),
-			ContentHash: "hash" + string(rune('0'+i%10)),
+			PageName:    fmt.Sprintf("page-%d", i),
+			ContentHash: fmt.Sprintf("hash%064d", i), // unique 64-char hex-like string per page
 			Chunks:      chunks,
 		}
 	}
