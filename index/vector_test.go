@@ -301,7 +301,10 @@ func TestVectorIndex_AddReplacesChunksForExistingPage(t *testing.T) {
 	model := getVectorModel(t)
 	vi := index.NewVectorIndex(model)
 
-	// Index with kubernetes content.
+	// Add a stable kubernetes reference page that stays unchanged throughout.
+	require.NoError(t, vi.Add(makePage("Reference K8s", kubernetesBody, nil)))
+
+	// Index "Evolving Page" with kubernetes content initially.
 	require.NoError(t, vi.Add(makePage("Evolving Page", kubernetesBody, nil)))
 
 	// Overwrite with completely different database content.
@@ -318,6 +321,32 @@ func TestVectorIndex_AddReplacesChunksForExistingPage(t *testing.T) {
 	}
 	assert.True(t, found,
 		"after re-Add with new content, page must be findable via the new topic's queries")
+
+	// For a kubernetes query, "Reference K8s" (unchanged kubernetes content) must
+	// outscore "Evolving Page" (now database content). This proves the old kubernetes
+	// chunks for "Evolving Page" were removed — not merely supplemented by the new ones.
+	// An append-only implementation would retain the old kubernetes vectors, causing
+	// "Evolving Page" to score equally with "Reference K8s", failing this check.
+	k8sResults := vi.Search("kubernetes pod container orchestration", 10)
+	var evolvingScore, referenceScore float64
+	evolvingFound, referenceFound := false, false
+	for _, r := range k8sResults {
+		if strings.EqualFold(r.Page, "Evolving Page") {
+			evolvingScore = r.Score
+			evolvingFound = true
+		}
+		if strings.EqualFold(r.Page, "Reference K8s") {
+			referenceScore = r.Score
+			referenceFound = true
+		}
+	}
+	require.True(t, referenceFound,
+		"'Reference K8s' (kubernetes content) must appear in a kubernetes query result")
+	if evolvingFound {
+		assert.Greater(t, referenceScore, evolvingScore,
+			"'Reference K8s' must outrank 'Evolving Page' for a kubernetes query after "+
+				"'Evolving Page' was re-indexed with database content; old chunks must be gone")
+	}
 }
 
 func TestVectorIndex_AddCaseInsensitiveReplaceProducesNoDuplicates(t *testing.T) {
