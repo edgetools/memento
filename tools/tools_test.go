@@ -62,7 +62,7 @@ func setupTestServer(t *testing.T) (*client.Client, *pages.Store, *index.Index) 
 
 	dir := t.TempDir()
 	store := pages.NewStore(dir)
-	idx := index.NewIndex()
+	idx := index.NewIndex(nil)
 
 	s := server.NewMCPServer("memento-test", "0.0.0", server.WithToolCapabilities(true))
 	tools.Register(s, store, idx)
