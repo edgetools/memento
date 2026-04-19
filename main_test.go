@@ -248,6 +248,9 @@ func TestWiring_Watcher_ExternalDelete_RemovesFromVectorIndex(t *testing.T) {
 	before := idx.Search("istio envoy traffic", 5)
 	require.NotEmpty(t, before, "page must be indexed before external deletion")
 
+	// Cache must exist after the initial Add calls, before the watcher runs.
+	require.FileExists(t, cp, "cache must exist after initial Add")
+
 	w, err := watcher.NewWatcher(dir, store, idx)
 	require.NoError(t, err)
 	require.NoError(t, w.Start())
@@ -263,6 +266,15 @@ func TestWiring_Watcher_ExternalDelete_RemovesFromVectorIndex(t *testing.T) {
 	after := idx.Search("istio envoy traffic", 5)
 	for _, r := range after {
 		assert.NotEqual(t, "Service Mesh", r.Page, "deleted page must not appear in search")
+	}
+
+	// The cache must have been rewritten by idx.Remove (write-through).
+	// The deleted page's entry must be absent.
+	cacheEntries, err := index.LoadCache(cp, model.ID(), model.SentexVersion(), model.Dimensions())
+	require.NoError(t, err)
+	for _, e := range cacheEntries {
+		assert.False(t, pages.NamesMatch(e.PageName, "Service Mesh"),
+			"deleted page must not remain in cache after watcher-triggered Remove")
 	}
 }
 

@@ -38,7 +38,7 @@ func newTestEnv(t *testing.T) (dir string, store *pages.Store, idx *index.Index)
 	t.Helper()
 	dir = t.TempDir()
 	store = pages.NewStore(dir)
-	idx = index.NewIndex(nil) // nil model = BM25 + trigram only, no vector
+	idx = index.NewIndex(nil, "") // nil model = BM25 + trigram only, no vector
 	return
 }
 

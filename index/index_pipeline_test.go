@@ -3,8 +3,8 @@ package index_test
 // Tests for CR4: Search Pipeline Merge.
 //
 // These tests cover the composite Index when an embedding model is wired in:
-//   - NewIndex(nil)  → backward-compatible BM25 + trigram + graph pipeline
-//   - NewIndex(model) → BM25 + vector parallel search, merged results
+//   - NewIndex(nil, "")  → backward-compatible BM25 + trigram + graph pipeline
+//   - NewIndex(model, "") → BM25 + vector parallel search, merged results
 //
 // Model-dependent tests call getVectorModel(t) (defined in testhelpers_test.go).
 // It loads the model once per test binary via sync.Once and fails hard if the
@@ -56,15 +56,15 @@ domain-specific languages compiled into execution graphs at runtime.`
 // Backward compatibility: nil model keeps the existing BM25+trigram pipeline.
 // ---------------------------------------------------------------------------
 
-// NewIndex(nil) must not panic and must return a usable index.
+// NewIndex(nil, "") must not panic and must return a usable index.
 func TestIndex_NilModel_NewIndexSucceeds(t *testing.T) {
-	idx := index.NewIndex(nil)
+	idx := index.NewIndex(nil, "")
 	require.NotNil(t, idx)
 }
 
 // With a nil model the basic keyword search pipeline is unchanged.
 func TestIndex_NilModel_KeywordSearchWorks(t *testing.T) {
-	idx := index.NewIndex(nil)
+	idx := index.NewIndex(nil, "")
 	idx.Add(pages.Parse("Deployment Guide",
 		[]byte("# Deployment Guide\n\nThis guide covers deployment strategies for production services.")))
 
@@ -77,7 +77,7 @@ func TestIndex_NilModel_KeywordSearchWorks(t *testing.T) {
 
 // With a nil model and fewer than 3 BM25 results, trigram fallback still runs.
 func TestIndex_NilModel_TrigramFallbackRunsWhenBM25ResultsAreFew(t *testing.T) {
-	idx := index.NewIndex(nil)
+	idx := index.NewIndex(nil, "")
 	idx.Add(pages.Parse("Kubernetes Guide",
 		[]byte("# Kubernetes Guide\n\n"+kubernetesBody)))
 
@@ -97,7 +97,7 @@ func TestIndex_NilModel_TrigramFallbackRunsWhenBM25ResultsAreFew(t *testing.T) {
 // After Add, the page is findable via a semantically related query (not exact keyword).
 func TestIndex_WithModel_AddSyncsVectorIndex(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	idx.Add(pages.Parse("Container Orchestration",
 		[]byte("# Container Orchestration\n\n"+kubernetesBody)))
@@ -112,7 +112,7 @@ func TestIndex_WithModel_AddSyncsVectorIndex(t *testing.T) {
 // After Remove, the page no longer appears in vector-driven results.
 func TestIndex_WithModel_RemoveSyncsVectorIndex(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	idx.Add(pages.Parse("Container Orchestration",
 		[]byte("# Container Orchestration\n\n"+kubernetesBody)))
@@ -128,7 +128,7 @@ func TestIndex_WithModel_RemoveSyncsVectorIndex(t *testing.T) {
 // Re-adding a page (replacing it) does not cause duplicates.
 func TestIndex_WithModel_AddReplaceDoesNotDuplicate(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	p := pages.Parse("Container Orchestration",
 		[]byte("# Container Orchestration\n\n"+kubernetesBody))
@@ -155,7 +155,7 @@ func TestIndex_WithModel_AddReplaceDoesNotDuplicate(t *testing.T) {
 // found when its semantic content matches the query intent.
 func TestIndex_WithModel_FindsSemanticMatch(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	// "CI/CD Pipeline" never contains the words "deployment strategy".
 	idx.Add(pages.Parse("CI/CD Pipeline",
@@ -181,7 +181,7 @@ func TestIndex_WithModel_FindsSemanticMatch(t *testing.T) {
 // because it is a direct semantic match, not merely a graph-boosted neighbour.
 func TestIndex_WithModel_VectorOnlyMatchIsIsDirect(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	// cicdBody is about CI/CD pipelines but deliberately contains neither
 	// "deployment" nor "strategy" — BM25 cannot match the query below, so
@@ -210,7 +210,7 @@ func TestIndex_WithModel_VectorOnlyMatchIsIsDirect(t *testing.T) {
 // A page returned by BM25 (direct keyword hit) must also be IsDirect=true.
 func TestIndex_WithModel_BM25MatchIsIsDirect(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	idx.Add(pages.Parse("Kubernetes Ops",
 		[]byte("# Kubernetes Ops\n\n"+kubernetesBody)))
@@ -228,7 +228,7 @@ func TestIndex_WithModel_BM25MatchIsIsDirect(t *testing.T) {
 // must carry IsDirect=false (it is not itself a semantic or keyword match).
 func TestIndex_WithModel_GraphBoostStillApplies(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	// "Operations Manual" is a direct keyword and semantic match for the query.
 	// "Ops Runbook" links to "Operations Manual" but contains none of the search
@@ -262,7 +262,7 @@ func TestIndex_WithModel_GraphBoostStillApplies(t *testing.T) {
 // A page that appears in both BM25 and vector results must appear exactly once.
 func TestIndex_WithModel_PageInBothResultsetsDeduplicatedToOne(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	// Strong BM25 match (title contains exact keywords) and strong semantic match.
 	idx.Add(pages.Parse("Kubernetes Deployment",
@@ -289,7 +289,7 @@ func TestIndex_WithModel_PageInBothResultsetsDeduplicatedToOne(t *testing.T) {
 // All result scores must be in [0, 1] after normalization.
 func TestIndex_WithModel_MergedScoresAreNormalized(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	idx.Add(pages.Parse("Kubernetes Ops",
 		[]byte("# Kubernetes Ops\n\n"+kubernetesBody)))
@@ -311,7 +311,7 @@ func TestIndex_WithModel_MergedScoresAreNormalized(t *testing.T) {
 // after normalisation).
 func TestIndex_WithModel_TopResultScoreIsOne(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	idx.Add(pages.Parse("Kubernetes Ops",
 		[]byte("# Kubernetes Ops\n\n"+kubernetesBody)))
@@ -328,7 +328,7 @@ func TestIndex_WithModel_TopResultScoreIsOne(t *testing.T) {
 // Results must be ordered by score descending.
 func TestIndex_WithModel_ResultsOrderedByScoreDescending(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	idx.Add(pages.Parse("Kubernetes Ops",
 		[]byte("# Kubernetes Ops\n\n"+kubernetesBody)))
@@ -351,7 +351,7 @@ func TestIndex_WithModel_ResultsOrderedByScoreDescending(t *testing.T) {
 
 func TestIndex_WithModel_RelevanceThresholdDropsWeakResults(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	idx.Add(pages.Parse("Kubernetes Ops",
 		[]byte("# Kubernetes Ops\n\n"+kubernetesBody)))
@@ -379,7 +379,7 @@ func TestIndex_WithModel_RelevanceThresholdDropsWeakResults(t *testing.T) {
 // non-empty snippet.
 func TestIndex_WithModel_AllResultsHaveSnippets(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	idx.Add(pages.Parse("CI/CD Pipeline",
 		[]byte("# CI/CD Pipeline\n\n"+cicdBody)))
@@ -399,7 +399,7 @@ func TestIndex_WithModel_AllResultsHaveSnippets(t *testing.T) {
 // Line field on vector-only results must be a valid 1-indexed line number.
 func TestIndex_WithModel_VectorOnlyResultHasValidLine(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	idx.Add(pages.Parse("CI/CD Pipeline",
 		[]byte("# CI/CD Pipeline\n\n"+cicdBody)))
@@ -421,7 +421,7 @@ func TestIndex_WithModel_VectorOnlyResultHasValidLine(t *testing.T) {
 // The Result struct fields must all be present (format contract with callers).
 func TestIndex_WithModel_ResultFormatUnchanged(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	idx.Add(pages.Parse("Kubernetes Ops",
 		[]byte("# Kubernetes Ops\n\n"+kubernetesBody)))
@@ -452,7 +452,7 @@ func TestIndex_WithModel_ResultFormatUnchanged(t *testing.T) {
 // when the query is a typo of a different, semantically close page's title.
 func TestIndex_WithModel_TrigramDoesNotRunWhenVectorEnabled(t *testing.T) {
 	model := getVectorModel(t)
-	idx := index.NewIndex(model)
+	idx := index.NewIndex(model, "")
 
 	// Two pages: one about kubernetes, one about databases.
 	// "Kubernetez" (typo) is trigram-close to "Kubernetes" and might trigger
