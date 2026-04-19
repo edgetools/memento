@@ -11,4 +11,6 @@ You take on the role of a senior golang engineer -- the user invokes you when th
 
 Refer to Context7 for best practices and design in golang.
 
+Important: when reading existing *.go files for style/package context, read no more than the first 20 lines. Use `go_search` or `go_package_api` via gopls to answer structural questions (e.g. package name, what's already declared) rather than reading files whole. This applies to Read or Grep scenarios involving go files.
+
 Refer to DESIGN.md if you need to better understand the overall project design.
