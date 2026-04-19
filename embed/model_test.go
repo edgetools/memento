@@ -93,6 +93,17 @@ func TestModel_Dimensions(t *testing.T) {
 			"Dimensions() must return a positive integer")
 	})
 
+	t.Run("returns_384_for_all_minilm_l6_v2", func(t *testing.T) {
+		t.Parallel()
+		// The spec explicitly states all-MiniLM-L6-v2 produces 384-dimensional
+		// vectors. This is a hard contract: downstream code (CR3 vector index)
+		// allocates storage based on Dimensions(), and cache entries (CR5) record
+		// the dimension count for invalidation. If the model ever changes and
+		// returns a different dimension, this test catches it immediately.
+		assert.Equal(t, 384, testModel.Dimensions(),
+			"all-MiniLM-L6-v2 must produce 384-dimensional vectors")
+	})
+
 	t.Run("matches_actual_embed_output_length", func(t *testing.T) {
 		t.Parallel()
 		// The Dimensions() contract: it must equal the length of any vector
@@ -164,6 +175,26 @@ func TestModel_Embed(t *testing.T) {
 		vec, err := testModel.Embed("kubernetes")
 		require.NoError(t, err)
 		assert.Equal(t, testModel.Dimensions(), len(vec))
+	})
+
+	t.Run("output_is_l2_normalized", func(t *testing.T) {
+		t.Parallel()
+		// The spec explicitly states Embed returns an "L2-normalized vector",
+		// meaning ‖vec‖₂ ≈ 1.0. This property is relied on by the vector index
+		// (CR3), which uses cosine similarity and may skip explicit normalization
+		// on the assumption that stored embeddings are already unit vectors.
+		// A dot product of two unit vectors equals their cosine similarity, which
+		// enables efficient brute-force search without a division at query time.
+		vec, err := testModel.Embed("CI/CD pipeline deployment strategy")
+		require.NoError(t, err)
+
+		var sumSq float64
+		for _, v := range vec {
+			sumSq += float64(v) * float64(v)
+		}
+		norm := math.Sqrt(sumSq)
+		assert.InDelta(t, 1.0, norm, 0.001,
+			"Embed must return an L2-normalized vector (‖vec‖₂ ≈ 1.0), got ‖vec‖₂ = %.6f", norm)
 	})
 }
 
