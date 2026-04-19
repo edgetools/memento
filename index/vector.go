@@ -20,6 +20,7 @@ type chunkEntry struct {
 	page     string    // canonical page name (as provided to Add)
 	normPage string    // normalized page name (via pages.Normalize)
 	line     int       // 1-indexed start line of this chunk
+	endLine  int       // 1-indexed end line of this chunk (inclusive)
 	vector   []float32 // L2-normalized embedding vector
 }
 
@@ -65,10 +66,43 @@ func (vi *VectorIndex) Add(page pages.Page) error {
 			page:     page.Name,
 			normPage: normName,
 			line:     c.StartLine,
+			endLine:  c.EndLine,
 			vector:   vecNormalize(vectors[i]),
 		})
 	}
 	return nil
+}
+
+// AddFromCache loads pre-computed chunk vectors for a page, bypassing embedding.
+// If the page was previously indexed its old chunks are replaced.
+func (vi *VectorIndex) AddFromCache(page pages.Page, chunks []CachedChunk) {
+	normName := pages.Normalize(page.Name)
+	vi.removeByNorm(normName)
+	for _, c := range chunks {
+		vi.chunks = append(vi.chunks, chunkEntry{
+			page:     page.Name,
+			normPage: normName,
+			line:     c.StartLine,
+			endLine:  c.EndLine,
+			vector:   vecNormalize(c.Vector),
+		})
+	}
+}
+
+// chunksFor returns the stored chunks for the given normalized page name as
+// CachedChunk values suitable for persisting in the cache.
+func (vi *VectorIndex) chunksFor(normName string) []CachedChunk {
+	var result []CachedChunk
+	for _, c := range vi.chunks {
+		if c.normPage == normName {
+			result = append(result, CachedChunk{
+				StartLine: c.line,
+				EndLine:   c.endLine,
+				Vector:    c.vector,
+			})
+		}
+	}
+	return result
 }
 
 // Remove removes all stored chunks for the named page (case-insensitive).

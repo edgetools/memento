@@ -13,7 +13,7 @@ import (
 	"github.com/edgetools/memento/pages"
 )
 
-const debounceWindow = 150 * time.Millisecond
+const debounceWindow = 100 * time.Millisecond
 
 // Watcher watches a content directory for .md file changes and updates the
 // in-memory index accordingly. Debounces rapid sequences of events per file.
@@ -31,6 +31,11 @@ type Watcher struct {
 	// debounce state: map from absolute path to pending timer
 	timers   map[string]*time.Timer
 	timersMu sync.Mutex
+
+	// settle notification: channels registered via NextSettle are closed after
+	// each settle() call completes. Guarded by settledMu.
+	settledMu  sync.Mutex
+	settledChs []chan struct{}
 }
 
 // NewWatcher creates a filesystem watcher on contentDir. Returns an error if
@@ -148,8 +153,34 @@ func (w *Watcher) debounce(path string, isRemove bool) {
 	})
 }
 
+// NextSettle returns a channel that is closed after the next settle() call
+// completes. Callers should invoke NextSettle before triggering the filesystem
+// event they intend to observe, then receive from the returned channel to block
+// until the settle finishes. Intended for tests; production code has no need
+// to wait for individual settles.
+func (w *Watcher) NextSettle() <-chan struct{} {
+	ch := make(chan struct{})
+	w.settledMu.Lock()
+	w.settledChs = append(w.settledChs, ch)
+	w.settledMu.Unlock()
+	return ch
+}
+
+// notifySettled closes all channels registered via NextSettle and resets the
+// list. Called at the end of every settle() invocation.
+func (w *Watcher) notifySettled() {
+	w.settledMu.Lock()
+	chs := w.settledChs
+	w.settledChs = nil
+	w.settledMu.Unlock()
+	for _, ch := range chs {
+		close(ch)
+	}
+}
+
 // settle performs the actual index update after the debounce window expires.
 func (w *Watcher) settle(path string, lastEventWasRemove bool) {
+	defer w.notifySettled()
 	// The page name is always derived from the filename, consistent with
 	// store.Scan and the CR6 spec. This ensures Remove and Add operate on the
 	// correct keys even when the H1 title differs from the filename (e.g.

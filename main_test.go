@@ -24,7 +24,6 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/edgetools/memento/embed"
 	"github.com/edgetools/memento/index"
@@ -42,8 +41,8 @@ import (
 // Model loading — lazy, once per test binary.
 
 var (
-	onceModel    sync.Once
-	sharedModel  *embed.Model
+	onceModel      sync.Once
+	sharedModel    *embed.Model
 	sharedModelErr error
 )
 
@@ -58,10 +57,6 @@ func getTestModel(t *testing.T) *embed.Model {
 
 // ---------------------------------------------------------------------------
 // Constants / helpers.
-
-// debounceWait is long enough for the watcher's debounce window (≥ 150 ms) to
-// settle before asserting index state.
-const debounceWait = 300 * time.Millisecond
 
 // cacheFilePath returns the conventional .memento-vectors path for a content dir.
 func cacheFilePath(dir string) string {
@@ -80,7 +75,7 @@ func TestStartup_NoCacheFile_AllPagesEmbeddedAndSearchable(t *testing.T) {
 	cp := cacheFilePath(dir)
 
 	store := pages.NewStore(dir)
-	_, err := store.Write("CI/CD Pipeline", "Deployment strategy using GitHub Actions for continuous delivery.")
+	_, err := store.Write("CICD Pipeline", "Deployment strategy using GitHub Actions for continuous delivery.")
 	require.NoError(t, err)
 	_, err = store.Write("Architecture Overview", "System design covering microservices and service mesh.")
 	require.NoError(t, err)
@@ -102,7 +97,7 @@ func TestStartup_NoCacheFile_AllPagesEmbeddedAndSearchable(t *testing.T) {
 	// the page title "CI/CD Pipeline" but is semantically related.
 	results := idx.Search("deployment workflow automation", 5)
 	require.NotEmpty(t, results, "search must return at least one result")
-	assert.Equal(t, "CI/CD Pipeline", results[0].Page)
+	assert.Equal(t, "CICD Pipeline", results[0].Page)
 }
 
 // TestStartup_ValidCacheFile_VectorsLoadedFromCache verifies that when a
@@ -211,12 +206,12 @@ func TestWiring_Watcher_ExternalCreate_UpdatesVectorIndexAndCache(t *testing.T) 
 	t.Cleanup(func() { w.Close() })
 
 	// Write a .md file externally (bypassing the store write path).
+	// Register the settle channel before writing so we cannot miss the event.
+	settled := w.NextSettle()
 	extFile := filepath.Join(dir, "Observability.md")
 	content := "# Observability\n\nMonitoring and tracing distributed systems with OpenTelemetry.\n"
 	require.NoError(t, os.WriteFile(extFile, []byte(content), 0644))
-
-	// Wait for the debounce window to pass.
-	time.Sleep(debounceWait)
+	<-settled
 
 	// The page must appear in search.
 	results := idx.Search("distributed tracing monitoring", 5)
@@ -257,10 +252,10 @@ func TestWiring_Watcher_ExternalDelete_RemovesFromVectorIndex(t *testing.T) {
 	t.Cleanup(func() { w.Close() })
 
 	// Delete the file externally.
+	// Register the settle channel before deleting so we cannot miss the event.
+	settled := w.NextSettle()
 	require.NoError(t, os.Remove(store.FilePath("Service Mesh")))
-
-	// Wait for the debounce window to pass.
-	time.Sleep(debounceWait)
+	<-settled
 
 	// The page must no longer appear in search results.
 	after := idx.Search("istio envoy traffic", 5)
@@ -281,7 +276,7 @@ func TestWiring_Watcher_ExternalDelete_RemovesFromVectorIndex(t *testing.T) {
 // ---------------------------------------------------------------------------
 // End-to-end test.
 
-// searchResult mirrors the per-result JSON returned by the search_pages tool.
+// searchResult mirrors the per-result JSON returned by the search tool.
 type searchResult struct {
 	Page      string  `json:"page"`
 	Relevance float64 `json:"relevance"`
@@ -307,7 +302,7 @@ func parseE2EJSON(t *testing.T, result *mcp.CallToolResult, v any) {
 // setupE2EServer creates a model-backed MCP server with a watcher running
 // against a fresh temp directory. Caller must not close the client manually;
 // cleanup is registered via t.Cleanup.
-func setupE2EServer(t *testing.T) (c *client.Client, st *pages.Store, idx *index.Index) {
+func setupE2EServer(t *testing.T) (c *client.Client, st *pages.Store, idx *index.Index, w *watcher.Watcher) {
 	t.Helper()
 
 	model := getTestModel(t)
@@ -334,12 +329,12 @@ func setupE2EServer(t *testing.T) (c *client.Client, st *pages.Store, idx *index
 	require.NoError(t, err)
 
 	// Start watcher after MCP server is ready.
-	w, err := watcher.NewWatcher(dir, st, idx)
+	w, err = watcher.NewWatcher(dir, st, idx)
 	require.NoError(t, err)
 	require.NoError(t, w.Start())
 	t.Cleanup(func() { w.Close() })
 
-	return c, st, idx
+	return c, st, idx, w
 }
 
 // callE2ETool is a thin wrapper around client.CallTool for the e2e tests.
@@ -357,26 +352,29 @@ func callE2ETool(t *testing.T, c *client.Client, name string, args map[string]an
 // TestEndToEnd_MCPWriteThenExternalModify_SearchReflectsChange is the
 // end-to-end scenario from CR7:
 //  1. Write a page via the write_page MCP tool.
-//  2. Verify the search_pages tool returns that page.
+//  2. Verify the search tool returns that page.
 //  3. Modify the file externally (simulating another Claude session or editor).
 //  4. Wait for the watcher debounce to fire.
-//  5. Verify search_pages reflects the updated content.
+//  5. Verify search reflects the updated content.
 func TestEndToEnd_MCPWriteThenExternalModify_SearchReflectsChange(t *testing.T) {
-	c, st, idx := setupE2EServer(t)
+	c, st, idx, w := setupE2EServer(t)
 
-	// Step 1: write a page via MCP.
+	// Step 1: write a page via MCP. Register the settle channel first so the
+	// watcher's re-index of the tool write is fully drained before step 2.
+	settled1 := w.NextSettle()
 	writeRes := callE2ETool(t, c, "write_page", map[string]any{
 		"page":    "Deployment Guide",
 		"content": "Instructions for deploying the application to staging using Docker Compose.",
 	})
 	require.False(t, writeRes.IsError, "write_page must succeed")
+	<-settled1
 
 	// Step 2: the page must appear in search immediately after writing.
-	searchRes1 := callE2ETool(t, c, "search_pages", map[string]any{
+	searchRes1 := callE2ETool(t, c, "search", map[string]any{
 		"query": "docker compose staging deployment",
 		"limit": 5,
 	})
-	require.False(t, searchRes1.IsError, "search_pages must succeed")
+	require.False(t, searchRes1.IsError, "search must succeed")
 	require.NotEmpty(t, searchRes1.Content, "search must return content")
 
 	var resp1 searchResponse
@@ -385,19 +383,21 @@ func TestEndToEnd_MCPWriteThenExternalModify_SearchReflectsChange(t *testing.T) 
 	assert.Equal(t, "Deployment Guide", resp1.Results[0].Page)
 
 	// Step 3: externally modify the file, simulating an out-of-band write.
+	// Register the settle channel before writing so we cannot miss the event.
+	settled2 := w.NextSettle()
 	filePath := st.FilePath("Deployment Guide")
 	newContent := "# Deployment Guide\n\nMigrating to Kubernetes with Helm charts for production rollout.\n"
 	require.NoError(t, os.WriteFile(filePath, []byte(newContent), 0644))
 
-	// Step 4: wait for the watcher debounce.
-	time.Sleep(debounceWait)
+	// Step 4: wait for the watcher to fully settle (debounce + embed + cache write).
+	<-settled2
 
 	// Step 5: search for the new content keywords; the page must still appear.
-	searchRes2 := callE2ETool(t, c, "search_pages", map[string]any{
+	searchRes2 := callE2ETool(t, c, "search", map[string]any{
 		"query": "kubernetes helm production rollout",
 		"limit": 5,
 	})
-	require.False(t, searchRes2.IsError, "search_pages must succeed after external modification")
+	require.False(t, searchRes2.IsError, "search must succeed after external modification")
 
 	var resp2 searchResponse
 	parseE2EJSON(t, searchRes2, &resp2)

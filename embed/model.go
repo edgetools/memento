@@ -1,6 +1,12 @@
 package embed
 
-import sentex "github.com/edgetools/go-sentex"
+import (
+	"runtime/debug"
+
+	sentex "github.com/edgetools/go-sentex"
+)
+
+const modelID = "all-MiniLM-L6-v2"
 
 // Model wraps a sentex.Model to provide memento's embedding API.
 // Callers depend on embed.Model rather than sentex.Model directly,
@@ -30,6 +36,26 @@ func (m *Model) Dimensions() int {
 // Inputs longer than ~256 tokens are silently truncated by go-sentex.
 func (m *Model) Embed(text string) ([]float32, error) {
 	return m.inner.Embed(text)
+}
+
+// ID returns the canonical model identifier ("all-MiniLM-L6-v2").
+// Used as part of the cache key to detect model changes.
+func (m *Model) ID() string {
+	return modelID
+}
+
+// SentexVersion returns the version string of the github.com/edgetools/go-sentex
+// module as recorded in the binary's build info. Returns "unknown" if build info
+// is unavailable (e.g. when running via `go run` without module mode).
+func (m *Model) SentexVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, dep := range info.Deps {
+			if dep.Path == "github.com/edgetools/go-sentex" {
+				return dep.Version
+			}
+		}
+	}
+	return "unknown"
 }
 
 // EmbedBatch returns one vector per element of texts, in the same order.

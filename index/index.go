@@ -1,6 +1,9 @@
 package index
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"log"
 	"maps"
 	"regexp"
 	"sort"
@@ -52,18 +55,28 @@ type Index struct {
 	bm25   *BM25
 	tri    *Trigram
 	graph  *Graph
-	vector *VectorIndex // nil when no embedding model is available
+	vector *VectorIndex          // nil when no embedding model is available
 	pages  map[string]pages.Page // normalized name → stored page (for snippets)
+
+	// Cache write-through fields. cachePath == "" disables write-through.
+	model        *embed.Model
+	cachePath    string
+	cacheEntries map[string]CacheEntry // normalized page name → cached entry
 }
 
 // NewIndex creates an empty composite Index. When model is non-nil a VectorIndex
 // is created and wired in; when nil the index behaves as BM25 + trigram + graph only.
-func NewIndex(model *embed.Model) *Index {
+// cachePath is the path to the .memento-vectors sidecar file used for embedding
+// write-through. An empty cachePath disables cache persistence.
+func NewIndex(model *embed.Model, cachePath string) *Index {
 	ix := &Index{
-		bm25:  NewBM25(),
-		tri:   NewTrigram(),
-		graph: NewGraph(),
-		pages: make(map[string]pages.Page),
+		bm25:         NewBM25(),
+		tri:          NewTrigram(),
+		graph:        NewGraph(),
+		pages:        make(map[string]pages.Page),
+		model:        model,
+		cachePath:    cachePath,
+		cacheEntries: make(map[string]CacheEntry),
 	}
 	if model != nil {
 		ix.vector = NewVectorIndex(model)
@@ -72,6 +85,8 @@ func NewIndex(model *embed.Model) *Index {
 }
 
 // Add indexes a page, replacing any existing entry with the same name.
+// When a cachePath is set and a model is available, the resulting chunk
+// embeddings are written through to the cache file.
 func (ix *Index) Add(page pages.Page) {
 	key := strings.ToLower(page.Name)
 	ix.bm25.Add(page)
@@ -85,10 +100,40 @@ func (ix *Index) Add(page pages.Page) {
 
 	if ix.vector != nil {
 		ix.vector.Add(page) //nolint:errcheck // embedding errors are non-fatal
+		if ix.cachePath != "" {
+			normName := pages.Normalize(page.Name)
+			ix.cacheEntries[normName] = CacheEntry{
+				PageName:    page.Name,
+				ContentHash: pageContentHash(page),
+				Chunks:      ix.vector.chunksFor(normName),
+			}
+			ix.saveCache()
+		}
+	}
+}
+
+// AddFromCache indexes a page using pre-computed chunk vectors from the given
+// CacheEntry, bypassing the (expensive) embedding step.
+// The BM25, graph, and trigram sub-indexes are updated exactly as in Add.
+func (ix *Index) AddFromCache(page pages.Page, entry CacheEntry) {
+	key := strings.ToLower(page.Name)
+	ix.bm25.Add(page)
+	ix.graph.Add(page)
+	ix.pages[key] = page
+
+	for term := range collectPageTerms(page) {
+		ix.tri.Add(term)
+	}
+
+	if ix.vector != nil {
+		ix.vector.AddFromCache(page, entry.Chunks)
+		normName := pages.Normalize(page.Name)
+		ix.cacheEntries[normName] = entry
 	}
 }
 
 // Remove removes a page from all sub-indexes.
+// When a cachePath is set, the cache file is updated (write-through).
 func (ix *Index) Remove(name string) {
 	key := strings.ToLower(name)
 	ix.bm25.Remove(name)
@@ -96,16 +141,45 @@ func (ix *Index) Remove(name string) {
 	delete(ix.pages, key)
 	if ix.vector != nil {
 		ix.vector.Remove(name)
+		if ix.cachePath != "" {
+			normName := pages.Normalize(name)
+			delete(ix.cacheEntries, normName)
+			ix.saveCache()
+		}
 	}
+}
+
+// saveCache writes the current cache entries to cachePath. Errors are logged
+// but not returned — a failed cache write is non-fatal; the server continues.
+func (ix *Index) saveCache() {
+	if ix.cachePath == "" || ix.model == nil {
+		return
+	}
+	entries := make([]CacheEntry, 0, len(ix.cacheEntries))
+	for _, e := range ix.cacheEntries {
+		entries = append(entries, e)
+	}
+	if err := SaveCache(ix.cachePath, entries, ix.model.ID(), ix.model.SentexVersion(), ix.model.Dimensions()); err != nil {
+		log.Printf("index: cache write-through failed: %v", err)
+	}
+}
+
+// pageContentHash returns a short hex digest of the page's name and body,
+// used to detect content changes between runs.
+func pageContentHash(page pages.Page) string {
+	h := sha256.Sum256([]byte(page.Name + "\x00" + page.Body))
+	return hex.EncodeToString(h[:8])
 }
 
 // Search executes the full search pipeline and returns up to limit results.
 //
 // Pipeline (with vector model):
-//   BM25 + vector cosine search → normalize & merge → graph boost → relevance threshold.
+//
+//	BM25 + vector cosine search → normalize & merge → graph boost → relevance threshold.
 //
 // Pipeline (nil model, backward-compatible):
-//   BM25 → trigram fallback if <3 results → graph boost → relevance threshold.
+//
+//	BM25 → trigram fallback if <3 results → graph boost → relevance threshold.
 func (ix *Index) Search(query string, limit int) []Result {
 	if query == "" || len(ix.pages) == 0 {
 		return nil
