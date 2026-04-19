@@ -1,11 +1,17 @@
-# Change Request: ONNX Embedding Runtime
+# Change Request: Embedding Runtime (go-sentex wrapper)
 
 ## Summary
 
-Add an `embed` package that loads an ONNX embedding model and converts text
-strings into float32 vectors. This is the inference foundation — it takes a
-string in and returns a vector out. Used downstream by the vector index (CR3)
-to embed chunks and queries.
+Add an `embed` package that wraps
+[`github.com/edgetools/go-sentex`](https://github.com/edgetools/go-sentex)
+and exposes a small, memento-owned API for loading a model and embedding
+text. This is the inference foundation — it takes a string in and returns
+a vector out. Used downstream by the vector index (CR3) to embed chunks
+and queries.
+
+The wrapper exists so that memento's internals depend on `embed.Model`
+(not directly on `sentex.Model`), which keeps the option open to swap the
+backend later without touching callers.
 
 ---
 
@@ -17,84 +23,60 @@ to embed chunks and queries.
 
 ```go
 type Model struct {
-    // internal: ONNX session, tokenizer, model dimensions
+    // internal: *sentex.Model
 }
 ```
 
 #### `LoadModel() (*Model, error)`
 
-Loads the embedded ONNX model from the binary (via `go:embed`). Returns
-an initialized model ready for inference. This is called once at startup.
-
-The model file (`all-MiniLM-L6-v2` or equivalent) is embedded in the binary
-using `//go:embed`. The specific model and embedding approach should be
-determined during implementation based on what Go ONNX runtime libraries are
-available and mature. Key requirements:
-
-- Pure Go (no CGo) strongly preferred
-- Must produce deterministic output for the same input
-- Must support the tokenizer the model expects (typically WordPiece for
-  MiniLM-family models)
-
-If a pure-Go ONNX runtime with tokenizer support doesn't exist, the
-implementation should document the tradeoff and proceed with the best
-available option (CGo-based ONNX runtime is acceptable as a fallback if
-pure Go is not viable).
+Calls `sentex.LoadModel()` and wraps the result in an `embed.Model`.
+go-sentex handles acquisition (HuggingFace Hub cache under `HF_HOME`) and
+ONNX session setup. On first run with no cached model, go-sentex downloads
+~87MB once; subsequent runs are offline.
 
 #### `(*Model) Embed(text string) ([]float32, error)`
 
-Tokenizes the input text using the model's tokenizer, runs inference, and
-returns the embedding vector. The vector length is determined by the model
-(384 for `all-MiniLM-L6-v2`).
-
-The input text may be longer than the model's context window (~256 tokens).
-Text beyond the window is truncated — this is standard behavior for
-embedding models and is handled at the tokenizer level.
+Delegates to `sentex.Model.Embed`. Returns a 384-dimensional L2-normalized
+vector. Inputs longer than the model's context window (~256 tokens) are
+truncated by go-sentex — no error.
 
 #### `(*Model) EmbedBatch(texts []string) ([][]float32, error)`
 
-Batch variant of `Embed` for efficiency. Embeds multiple texts in a single
-inference pass (or multiple passes if the batch is too large). Returns
-vectors in the same order as the input texts.
-
-This is used at startup to embed all chunks for new/changed pages. Batching
-amortizes the per-inference overhead.
+Delegates to `sentex.Model.EmbedBatch`. Returns vectors in the same order
+as the input texts. Used at startup to embed all chunks for new/changed
+pages.
 
 #### `(*Model) Dimensions() int`
 
-Returns the dimensionality of the model's output vectors (e.g. 384). Used
-by the vector index to pre-allocate storage.
+Returns `sentex.Model.Dimensions()` — 384 for `all-MiniLM-L6-v2`. Used by
+the vector index to pre-allocate storage.
 
 ---
 
 ## Behavior Details
 
-### Model selection
+### Backend: go-sentex
 
-The primary candidate is `all-MiniLM-L6-v2`:
-- 384-dimensional output
-- ~80MB ONNX file
-- Well-studied for semantic similarity and retrieval tasks
-- Widely used as a baseline in the embedding space
-
-If implementation research reveals a better option (smaller model with
-acceptable quality, or a model with better Go runtime support), the
-implementer should use their judgment. The key constraint is that the model
-must be small enough to `go:embed` without impractical build times.
-
-### Tokenization
-
-The model expects tokenized input (typically WordPiece tokenization for
-BERT-family models). The `embed` package must handle tokenization internally
-— callers pass plain text strings. If no pure-Go WordPiece tokenizer exists,
-a simple whitespace + subword tokenizer that produces compatible token IDs
-is acceptable as a starting point.
+- Pure Go, no CGo. Builds with `CGO_ENABLED=0`, cross-compiles cleanly.
+- Model: `all-MiniLM-L6-v2`, 384-dim L2-normalized output.
+- Max input: 256 tokens (truncation handled internally).
+- Model file cached at the standard HuggingFace Hub location; honors the
+  `HF_HOME` environment variable. Compatible with existing caches created
+  by Python HuggingFace tooling.
 
 ### Determinism
 
-The same input text must always produce the same output vector. This is
-important for cache validity — if embeddings were non-deterministic, content
-hash-based caching (CR5) would not work correctly.
+go-sentex produces bit-identical output for identical input on the same
+machine. This is required for content-hash-based cache validity (CR5):
+if embeddings were non-deterministic, cache hits would silently drift
+from re-embeds. The test suite enforces this with an exact-equality
+assertion.
+
+### Model identity for cache invalidation
+
+The cache (CR5) records both the model name and the go-sentex library
+version in its header. A go-sentex update that changes preprocessing or
+the underlying model invalidates the cache on next startup.
 
 ---
 
@@ -103,4 +85,5 @@ hash-based caching (CR5) would not work correctly.
 - No changes to existing packages (`index/`, `pages/`, `tools/`).
 - No MCP tool schema changes.
 - No vector storage or search — that's CR3.
-- No model downloading at runtime — the model is baked into the binary.
+- No tokenizer code in memento — go-sentex owns tokenization.
+- No `go:embed` of the model — go-sentex handles acquisition.

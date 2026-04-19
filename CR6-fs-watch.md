@@ -51,8 +51,16 @@ times.
 | `.md` file modified | `store.Load(name)` then `idx.Add(page)` (replaces existing) |
 | `.md` file deleted | `idx.Remove(name)` |
 | `.md` file renamed | `idx.Remove(oldName)`, then `store.Load(newName)` + `idx.Add(page)` |
-| Non-`.md` file | Ignore |
+| `.md` file chmod-only | Ignore (permission changes don't affect content) |
+| Non-`.md` file | Ignore (includes `.memento-vectors` cache file) |
 | Directory events | Ignore (content directory is flat) |
+
+The watcher explicitly ignores `.memento-vectors`. The cache is derived
+data; the `.md` files are the source of truth. A peer instance writing
+the cache also writes the `.md` files it's responding to, so the content
+changes are already observed through the `.md` path. Watching the cache
+too would create feedback churn (self-write reloads) with no correctness
+benefit.
 
 The page name is derived from the filename using `pages.FilenameToName`,
 consistent with how `store.Scan` works at startup.
@@ -62,7 +70,7 @@ consistent with how `store.Scan` works at startup.
 Text editors and tools often trigger multiple rapid filesystem events for
 a single logical change (e.g. write temp file, rename, chmod). The watcher
 debounces events per-file: after receiving an event for a file, it waits
-100-200ms for additional events on the same file before acting. If more
+150ms for additional events on the same file before acting. If more
 events arrive during the window, the timer resets.
 
 This prevents:

@@ -53,13 +53,26 @@ Updated pipeline:
 
 ```
 1. BM25 keyword search (existing)
-2. Trigram fallback if <3 BM25 results (existing)
-3. Vector cosine search (new, only when vector != nil)
-4. Merge BM25 and vector results (new)
-5. Graph boost (existing)
-6. Relevance threshold (existing)
-7. Build results with snippets (existing)
+2. If vector != nil: vector cosine search (new)
+   Else: trigram fallback if <3 BM25 results (existing)
+3. Merge BM25 and vector results (new, skipped when vector == nil)
+4. Graph boost (existing)
+5. Relevance threshold (existing, unchanged: relevanceRatio = 0.5)
+6. Build results with snippets (existing)
 ```
+
+**Trigram vs vector:** when an embedding model is present, vector search
+subsumes trigram's "no exact match" role — vectors handle semantic drift,
+typos, and vocabulary mismatch better than character trigrams. Trigram
+code stays wired for the `vector == nil` path (currently only used by
+existing tests that pass `nil` to `NewIndex`). In normal production
+operation trigram does not run.
+
+**Vector result cap:** vector search returns at most the top 20 results,
+and any result with cosine similarity below 0.3 is dropped before merge.
+This keeps low-similarity noise from diluting the merged set. (Cosine
+scores on L2-normalized vectors have a rough "meaningful" floor around
+0.25–0.35 for `all-MiniLM-L6-v2`; 0.3 is a reasonable cutoff.)
 
 **Merge logic (step 4):**
 
@@ -100,6 +113,13 @@ Both BM25 and vector scores are normalized to [0, 1] before merging:
 
 If either pipeline returns no results, the other pipeline's results pass
 through unnormalized (they're already the full result set).
+
+### Relevance threshold
+
+The existing `relevanceRatio = 0.5` (drop results below 50% of the top
+score) applies unchanged to the merged set. Because both score sets are
+normalized to [0, 1] before merging, top = 1.0 and the 50% cutoff remains
+meaningful. No new tuning required.
 
 ### Vector-only results and IsDirect
 

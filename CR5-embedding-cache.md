@@ -25,9 +25,10 @@ The cache contains:
 
 ```
 Header:
-  model_id     string   // identifies the model (e.g. "all-MiniLM-L6-v2")
-  dimensions   int      // vector dimensionality (e.g. 384)
-  version      int      // cache format version (for future migrations)
+  model_id       string   // identifies the model (e.g. "all-MiniLM-L6-v2")
+  sentex_version string   // go-sentex library version (e.g. "v0.1.3")
+  dimensions     int      // vector dimensionality (e.g. 384)
+  version        int      // cache format version (for future migrations)
 
 Per-page entries:
   page_name    string
@@ -38,16 +39,20 @@ Per-page entries:
     vector     []float32
 ```
 
-#### `SaveCache(path string, entries []CacheEntry, modelID string, dims int) error`
+#### `SaveCache(path string, entries []CacheEntry, modelID, sentexVersion string, dims int) error`
 
 Writes the full cache to disk atomically (write to temp file, then rename).
-Atomic writes prevent corruption if memento is killed mid-write.
+Atomic writes prevent corruption if memento is killed mid-write. Every
+save is a full rewrite — the cache is small (even 10K chunks at 384 dims
+is ~15MB), so simple wins over incremental bookkeeping.
 
-#### `LoadCache(path string, modelID string, dims int) ([]CacheEntry, error)`
+#### `LoadCache(path string, modelID, sentexVersion string, dims int) ([]CacheEntry, error)`
 
 Reads the cache from disk. Returns an error (or empty result) if:
 - The file doesn't exist (first run — not an error, just empty)
 - The `model_id` doesn't match (model changed — cache is stale)
+- The `sentex_version` doesn't match (library update may have changed
+  preprocessing or output — cache is stale)
 - The `dimensions` don't match
 - The `version` is unsupported
 - The file is corrupt
@@ -124,6 +129,24 @@ are incompatible.
 Pages that exist in the cache but not on disk are simply not loaded. The
 next cache save will omit them, effectively garbage-collecting stale
 entries.
+
+### Multiple memento instances on the same brain
+
+When two memento instances share a content directory, both will read and
+write `.memento-vectors`. This is safe:
+
+- Vectors are deterministic for `(content_hash, model_id, sentex_version)`.
+  Two instances computing the same entry produce bit-identical output, so
+  reading a peer's cache entry is equivalent to recomputing it locally.
+- Atomic rename prevents partial-write corruption.
+- Concurrent saves race on last-write-wins. The "loser" may temporarily
+  overwrite an entry another instance had. But because both instances
+  watch the same `.md` files (CR6), they converge on the same entry set
+  within one debounce window and one of them will flush again.
+- Worst case is a one-time redundant re-embed if an instance's entry was
+  clobbered before it re-reads the cache. Not a correctness issue.
+
+The cache is derived data — even complete loss self-heals on next startup.
 
 ---
 

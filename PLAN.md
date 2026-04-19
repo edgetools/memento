@@ -39,15 +39,22 @@ Query → [BM25 + trigram fallback] + [Vector cosine search]
 The search tool's output format is unchanged. Consumers see the same
 `{page, relevance, snippet, line, linked_pages}` structure.
 
-### Embedding model: Go ONNX runtime, baked into the binary
+### Embedding model: go-sentex (pure Go, HuggingFace-cached)
 
-Use a Go ONNX inference library to run `all-MiniLM-L6-v2` (384-dim, ~80MB)
-in-process. The model file is embedded in the binary via `go:embed`. The
-binary just works — no flags, no downloads, no external processes.
+Use [`github.com/edgetools/go-sentex`](https://github.com/edgetools/go-sentex)
+to run `all-MiniLM-L6-v2` (384-dim) in-process. go-sentex is a pure-Go
+library (no CGo) that loads the ONNX model from the standard HuggingFace
+Hub cache (honors `HF_HOME`). On first run with no cached model, it
+downloads ~87MB once; subsequent runs are offline.
 
-Embedding models are frozen artifacts. They don't receive updates. When a
-better model becomes available, that's a memento version bump with cache
-auto-invalidation.
+The model is not `go:embed`'d into memento's binary — go-sentex handles
+acquisition and caching. A failed model load is fatal: vector search is
+a core part of the offering, and the server should not silently degrade
+to BM25-only.
+
+Embedding models are frozen artifacts. When go-sentex bumps its model
+version, memento's cache auto-invalidates on the recorded go-sentex
+version string.
 
 ### Vector storage: in-memory flat scan, sidecar cache
 
