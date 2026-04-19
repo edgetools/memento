@@ -230,18 +230,18 @@ func TestIndex_WithModel_GraphBoostStillApplies(t *testing.T) {
 	model := getVectorModel(t)
 	idx := index.NewIndex(model)
 
-	// "Kubernetes Ops" is a direct keyword and semantic match for the query.
-	// "Ops Runbook" links to "Kubernetes Ops" but contains none of the search
+	// "Operations Manual" is a direct keyword and semantic match for the query.
+	// "Ops Runbook" links to "Operations Manual" but contains none of the search
 	// terms — it should appear only via graph boost.
-	idx.Add(pages.Parse("Kubernetes Ops",
-		[]byte("# Kubernetes Ops\n\n"+kubernetesBody)))
+	idx.Add(pages.Parse("Operations Manual",
+		[]byte("# Operations Manual\n\n"+kubernetesBody)))
 	idx.Add(pages.Parse("Ops Runbook",
-		[]byte("# Ops Runbook\n\nSee [[Kubernetes Ops]] for container configuration details.")))
+		[]byte("# Ops Runbook\n\nSee [[Operations Manual]] for operational procedures.")))
 
 	results := idx.Search("kubernetes pods container", 10)
 	names := resultPageNames(results)
 
-	assert.Contains(t, names, "Kubernetes Ops",
+	assert.Contains(t, names, "Operations Manual",
 		"direct match must appear in results")
 	assert.Contains(t, names, "Ops Runbook",
 		"page linked from a direct match must be boosted into results by the graph")

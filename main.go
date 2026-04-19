@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/edgetools/memento/embed"
 	"github.com/edgetools/memento/index"
 	"github.com/edgetools/memento/pages"
 	"github.com/edgetools/memento/tools"
@@ -39,8 +40,13 @@ func main() {
 		}
 	}
 
+	model, err := embed.LoadModel()
+	if err != nil {
+		log.Fatalf("failed to load embedding model: %v", err)
+	}
+
 	store := pages.NewStore(absDir)
-	idx := index.NewIndex()
+	idx := index.NewIndex(model)
 
 	// Build index from existing pages.
 	for _, p := range store.Scan() {
