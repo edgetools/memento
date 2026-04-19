@@ -179,6 +179,31 @@ func TestWatcher_CreateEvent_IgnoresNonMdFiles(t *testing.T) {
 		"non-.md file should not be indexed")
 }
 
+func TestWatcher_RenameEvent_IgnoresNonMdFiles(t *testing.T) {
+	dir, store, idx := newTestEnv(t)
+	populateIndex(t, store, idx)
+
+	// Write a non-.md file before starting the watcher so no Create event fires.
+	oldPath := filepath.Join(dir, "notes.txt")
+	newPath := filepath.Join(dir, "notes-renamed.txt")
+	require.NoError(t, os.WriteFile(oldPath, []byte("some plain text"), 0o644))
+
+	w, err := watcher.NewWatcher(dir, store, idx)
+	require.NoError(t, err)
+	require.NoError(t, w.Start())
+	defer w.Close()
+
+	require.NoError(t, os.Rename(oldPath, newPath))
+
+	time.Sleep(debounceSettle)
+
+	// Neither the old nor the new path should appear in the index.
+	assert.False(t, indexContainsPage(idx, "notes"),
+		"renaming a non-.md file should not affect the index")
+	assert.False(t, indexContainsPage(idx, "notes-renamed"),
+		"renaming a non-.md file should not affect the index")
+}
+
 func TestWatcher_CreateEvent_IgnoresMementoVectorsFile(t *testing.T) {
 	dir, store, idx := newTestEnv(t)
 	populateIndex(t, store, idx)
@@ -250,7 +275,7 @@ func TestWatcher_ModifyEvent_ReplacesStaleEntry(t *testing.T) {
 	dir, store, idx := newTestEnv(t)
 	populateIndex(t, store, idx)
 
-	// Pre-populate a page with an old title that will change.
+	// Pre-populate a page with old content that contains a unique term.
 	page, err := store.Write("stale title", "# Stale Title\nOriginal content here.")
 	require.NoError(t, err)
 	idx.Add(page)
@@ -260,14 +285,17 @@ func TestWatcher_ModifyEvent_ReplacesStaleEntry(t *testing.T) {
 	require.NoError(t, w.Start())
 	defer w.Close()
 
-	// External write: keep same filename but update the content body.
-	writeMdRaw(t, dir, "stale title", "# Stale Title\nReplaced content with fresh material.")
+	// External write: keep same filename but replace the content body with a
+	// unique term ("xyzfreshtoken") that cannot appear anywhere else in the index.
+	writeMdRaw(t, dir, "stale title", "# Stale Title\nReplaced content with xyzfreshtoken material.")
 
 	time.Sleep(debounceSettle)
 
-	// Page should still be findable (it was re-indexed, not lost).
-	assert.True(t, indexContainsPage(idx, "Stale Title"),
-		"page should remain indexed with updated content after modify")
+	// The unique term from the updated content must be discoverable, proving
+	// that the stale index entry was replaced rather than merely retained.
+	results := idx.Search("xyzfreshtoken", 20)
+	assert.NotEmpty(t, results,
+		"unique term from the updated content should be findable after modify re-indexes the page")
 }
 
 // ---------------------------------------------------------------------------
@@ -338,16 +366,14 @@ func TestWatcher_RenameEvent_NewFileIsIndexed(t *testing.T) {
 	dir, store, idx := newTestEnv(t)
 	populateIndex(t, store, idx)
 
-	// Write a brand-new file; don't add it to the index yet.
+	// Write the source file before starting the watcher so no Create event fires
+	// for it; the watcher starts with a clean slate and only sees the Rename.
 	writeMdRaw(t, dir, "pre-rename file", "# Pre-Rename File\nContent that travels with the file.")
 
 	w, err := watcher.NewWatcher(dir, store, idx)
 	require.NoError(t, err)
 	require.NoError(t, w.Start())
 	defer w.Close()
-
-	// Wait for the initial Create event from above write to settle.
-	time.Sleep(debounceSettle)
 
 	oldPath := filepath.Join(dir, pages.NameToFilename("pre-rename file"))
 	newPath := filepath.Join(dir, pages.NameToFilename("post-rename file"))
@@ -422,7 +448,6 @@ func TestWatcher_Debounce_OnlyFinalStateIsIndexed(t *testing.T) {
 
 	assert.True(t, indexContainsPage(idx, "Debounce Page"),
 		"page should be indexed once after the debounce window settles")
-	_ = store
 }
 
 func TestWatcher_Debounce_RapidDeleteThenCreate_ProducesIndexedPage(t *testing.T) {
@@ -448,7 +473,6 @@ func TestWatcher_Debounce_RapidDeleteThenCreate_ProducesIndexedPage(t *testing.T
 
 	assert.True(t, indexContainsPage(idx, "Flicker Page"),
 		"page should be indexed after rapid delete-recreate sequence")
-	_ = store
 }
 
 // ---------------------------------------------------------------------------
@@ -475,7 +499,6 @@ func TestWatcher_LoadFailure_SilentlyDropped(t *testing.T) {
 
 	assert.False(t, indexContainsPage(idx, "Ghost Page"),
 		"a page whose file was deleted before load should not appear in the index")
-	_ = store
 }
 
 func TestWatcher_RemoveNonExistentPage_IsNoOp(t *testing.T) {
@@ -498,7 +521,6 @@ func TestWatcher_RemoveNonExistentPage_IsNoOp(t *testing.T) {
 	time.Sleep(debounceSettle)
 
 	// No assertion beyond "did not panic".
-	_ = store
 }
 
 // ---------------------------------------------------------------------------
