@@ -9,7 +9,7 @@ The user wants to update the knowledge brain. This is deliberate documentation w
 ## Before writing
 
 1. If the user named a specific page, call `get_page` to read the current content before changing it — note `last_updated` in the response. A recently-updated page may reflect deliberate decisions worth understanding before overwriting; a page last updated long ago is more likely safe to revise freely.
-2. If the target page isn't clear, call `search` to find the right one, or `list_pages` if you need an exhaustive and paginated list of topics.
+2. If the target page isn't clear, call `search` — it resolves a natural-language description of the page ("the page about how we handle flaky tests") to the actual page, so you don't need the user's exact title. Reserve `list_pages` for when you truly need to browse every topic.
 3. Understand what currently exists before deciding how to change it
 
 ## How to update

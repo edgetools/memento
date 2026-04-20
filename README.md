@@ -81,6 +81,8 @@ Multiple brains can be active simultaneously — each registered under a differe
 
 Quit and relaunch to load the MCP server.
 
+On first launch, memento downloads a small (~87 MB) sentence-embedding model (`all-MiniLM-L6-v2`) into the standard HuggingFace Hub cache (`HF_HOME`, default `~/.cache/huggingface`). This powers semantic search. Subsequent launches are offline. Embeddings for your pages are cached in a `.memento-vectors` sidecar file inside the content directory — safe to delete (rebuilds on next startup) and suitable for `.gitignore`.
+
 ---
 
 ## Wiring Up Skills
@@ -148,12 +150,16 @@ A memento brain is a valid Obsidian vault. `[[wikilinks]]` resolve to files by n
 
 Point memento at a git repo and use `-auto-commit` to record every write as a commit automatically. The full history of the brain is always recoverable.
 
+### Live reload
+
+memento watches the content directory with `fsnotify` and reindexes on the fly when markdown files change on disk — whether from Obsidian, a text editor, `git pull`, or another memento instance writing to the same brain. No restart required.
+
 ---
 
 ## MCP Tools
 
 ### `search`
-Query the brain by keyword. Returns relevance-ranked results with contextual snippets, related pages, and `last_updated` timestamps for each result and linked page detail.
+Query the brain by keyword or concept. Combines BM25 keyword ranking with semantic vector search (384-dim embeddings), so a query for "deployment strategy" can surface a page titled "CICD Pipeline" even when those exact words don't appear. Returns relevance-ranked results with contextual snippets, related pages, and `last_updated` timestamps for each result and linked page detail.
 
 ```json
 { "query": "enchanter crowd control", "max_results": 10 }

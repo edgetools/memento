@@ -17,11 +17,11 @@ Recall your memories any time you:
 
 ## How to recall memories
 
-1. Pick the most specific term or phrase for the concept — domain terms over generic words
-2. Call `search` with that term
+1. Query with a short phrase that describes the concept in whatever words come naturally — memento matches meaning, not just exact terms, so a paraphrase of what you're thinking about usually works. Domain terms still help when you know them, but you don't need to guess the brain's vocabulary.
+2. Call `search` with that phrase
 3. If results look relevant, call `get_page` to read the full page
-4. Follow `[[wikilinks]]` in the retrieved page when they point to concepts that are load-bearing for your current task — but stop after 1–2 hops; don't rabbit-hole
-5. If you cannot find anything, consider using `list_pages` which can deliver a paginated list of every topic in the brain -- use this as a last resort.
+4. Follow a `[[wikilink]]` only when it's load-bearing for your current task — a well-scoped search usually returns the right page directly, so don't reflexively hop
+5. A zero-result search is a reliable "not in the brain" signal — `list_pages` is a last resort for when you need to browse the full topic list, not a fallback for missed searches
 
 ## How to use what you find
 

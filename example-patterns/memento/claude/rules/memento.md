@@ -6,6 +6,6 @@ Your second brain is for **personal, cross-session memory** — not project docu
 
 ## Behaviors you do automatically
 
-**Recall your memories continuously** — whenever you encounter a term, concept, or decision that might have prior context, recall your memories from your second brain before proceeding. Don't wait for the start of a task; recall as new concepts surface. The `memento-recall` skill has full guidance on when and how to recall.
+**Recall your memories continuously** — whenever you encounter a term, concept, or decision that might have prior context, recall your memories from your second brain before proceeding. Don't wait for the start of a task; recall as new concepts surface. Search is semantic: query by concept in natural language, not just exact keywords. The `memento-recall` skill has full guidance on when and how to recall.
 
 **Snapshot things mid-task** — when you work out a decision, define a concept, or learn something that should survive to the next session, snapshot it to your brain immediately. The `memento-snapshot` skill has full guidance on how and when to snapshot memories.

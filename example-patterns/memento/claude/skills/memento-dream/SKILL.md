@@ -18,14 +18,15 @@ Before deciding what to do with each orphan, check its `last_updated` timestamp 
 - **Old and unlinked**: the page has been isolated for a long time — it's more likely obsolete, a merge candidate, or something that was captured and never followed up on
 
 For each orphan, decide:
-- **Link it**: if it's a real concept worth keeping, find pages that should reference it and add `[[wikilinks]]`
+- **Link it**: if it's a real concept worth keeping, find pages that should reference it and add `[[wikilinks]]`. To find linking candidates, `search` with the orphan's title or first paragraph — semantic search will surface pages that discuss the same concept even when they use different wording.
 - **Merge it**: if its content belongs on another page, append it there and delete the orphan
 - **Delete it**: if the concept is obsolete or irrelevant, use `delete_page`
 
 ## Task 2: Consolidate duplicates
 
 Look for pages that re-explain a concept already covered elsewhere:
-- Search for similar terms and compare page content
+- Query by concept, not term — `search("retry logic")` will surface pages titled "Exponential Backoff" or "Flaky Network Handling" even if neither contains the word "retry". Those are your consolidation candidates.
+- Compare page content across the semantically-adjacent results
 - If two pages cover the same concept, merge the content into the more canonical page and replace the redundant page's content with a redirect note pointing to the canonical page (or delete the duplicate outright)
 
 ## Task 3: Split oversized pages
@@ -40,7 +41,7 @@ Pages that have grown very long may be covering multiple distinct concepts:
 
 For each major concept page, check whether related pages link to it:
 - Read the page's `links_to` and `linked_from` fields
-- Search for pages that discuss the concept but don't link to it
+- Query by concept to find pages that discuss the topic but don't link to it — semantic search will surface paraphrased discussions the page author didn't think to link. If the concept is "Retry Backoff Strategy", `search("retrying after failures")` will turn up pages that should be linking but aren't.
 - Add missing `[[wikilinks]]` via `patch_page`
 
 ## Task 5: Rename poorly named pages
