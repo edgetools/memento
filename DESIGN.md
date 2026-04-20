@@ -34,13 +34,20 @@ On startup, parses all `.md` files in `-content-dir` to build an in-memory index
 
 - **BM25 inverted index** with weighted field scoring (title, wikilinks, body)
   and Porter stemming for relevance-ranked keyword search
-- **Trigram index** for fuzzy matching as a fallback layer (handles typos,
-  partial terms, morphological edge cases)
+- **Vector index** of 384-dimensional sentence embeddings, chunked per page,
+  for semantic similarity search
 - **Bidirectional link graph** parsed from `[[wikilinks]]` in page content
 
-Index is rebuilt on startup and updated in-place on writes. If search performance
-becomes a problem at scale, a SQLite cache layer can be added later without changing
-the tool interface.
+Index is rebuilt on startup and updated in-place on writes. Embedding vectors
+are persisted to a `.memento-vectors` sidecar file in the content directory
+(keyed by content hash + model identity), so only changed pages are re-embedded
+on subsequent startups. The sidecar is derived data — safe to delete, rebuilds
+on next startup, belongs in `.gitignore`.
+
+A filesystem watcher (`fsnotify`) runs alongside the MCP server: when markdown
+files in the content directory change from outside memento (editor, `git pull`,
+another memento instance), the affected pages are re-parsed and the index is
+updated in-place, with no restart required.
 
 ---
 
@@ -118,26 +125,27 @@ responsibility.
 
 ## Search and Indexing
 
-The search system uses a multi-layer approach: BM25 keyword ranking with weighted
-fields as the primary layer, trigram fuzzy matching as a fallback, and link graph
-boosting as a post-processing step.
+The search system runs two ranking layers in parallel — BM25 keyword scoring
+and semantic vector similarity — and merges their results before applying link
+graph boosting and a relevance threshold.
 
 ### Search Pipeline
 
 ```
-Query → Layer 1: BM25 (stemmed, weighted fields)
-         ↓ enough results? → yes → Graph Boost → Relevance Filter → Return
-         ↓ no
-       Layer 2: Trigram Fuzzy Matching
-         ↓ expand query terms with fuzzy matches → re-run BM25
-         ↓
-       Graph Boost → Relevance Filter → Return
+Query → [BM25 (stemmed, weighted fields)]  ┐
+      → [Vector cosine search over chunks] ┘ → Merge & Normalize
+      → Graph Boost
+      → Relevance Filter
+      → Snippet Generation → Return
 ```
 
-Layer 2 only runs when Layer 1 returns fewer than 3 results. This avoids the
-noise of fuzzy matching when exact/stemmed matching already found good results.
+Vector search is the semantic gate: only pages that clear the vector similarity
+floor enter the merged result set. BM25 provides a score boost for pages that
+also match keywords. This prevents a coincidental keyword hit in a semantically
+unrelated page from surviving as a top result. When vector returns nothing,
+BM25 scores pass through so keyword-only queries still work.
 
-### Layer 1: BM25 (Best Match 25)
+### BM25 (Best Match 25)
 
 BM25 is the primary ranking algorithm. It improves on TF-IDF by adding term
 frequency saturation (diminishing returns after a term appears many times) and
@@ -179,29 +187,44 @@ individual terms ("crowd", "control") and as a compound term ("crowd control").
 Searching for "crowd control" as a phrase ranks higher than pages that mention
 crowds and control separately.
 
-### Layer 2: Trigram Fuzzy Matching (Fallback)
+### Vector Search
 
-Trigrams are 3-character sliding windows used for approximate string matching.
-"enchanter" becomes: `enc`, `nch`, `cha`, `han`, `ant`, `nte`, `ter`. A search
-for "enchaner" (typo) has high trigram overlap with "enchanter" and still matches.
+Semantic search runs in parallel with BM25. Pages are split into chunks at
+parse time and each chunk is embedded into a 384-dimensional vector using the
+`all-MiniLM-L6-v2` sentence-transformer model (loaded in-process via
+[`go-sentex`](https://github.com/edgetools/go-sentex), pure Go, no CGo). The
+query is embedded into the same space and compared to every chunk vector by
+cosine similarity. Chunks above a similarity floor (0.3) are returned; the
+best chunk's page name and start line bubble up as the match.
 
-**This layer only fires when Layer 1 returns fewer than 3 results.** This avoids
-polluting good exact results with fuzzy noise.
+**Chunking strategy:**
 
-**Build process:**
+1. Primary split on markdown section headings (`##`, `###`, etc.)
+2. Fallback split on double-newline paragraph breaks for pages without
+   headings (e.g. accumulated snapshot pages)
+3. Each chunk is prefixed with the page's `# Title` line so the embedding
+   carries page identity
+4. Chunks smaller than ~50 tokens are merged with an adjacent chunk
+5. Maximum size is bounded by the model's 256-token context window
 
-1. For each unique term in the BM25 index, generate its trigram set
-2. Store a reverse mapping: trigram → list of terms containing it
-3. Also generate trigrams for `[[wikilink]]` targets as compound terms
+**Storage and scale:** Vectors are kept in memory as a flat array and searched
+by brute-force cosine. At the expected scale (hundreds of pages, thousands of
+chunks), this is sub-millisecond. No approximate-nearest-neighbor index is
+needed.
 
-**Fallback process:**
+**Embedding cache:** Embeddings are persisted to a `.memento-vectors` sidecar
+file in the content directory, keyed by a content hash per page and stamped
+with the model identity (`all-MiniLM-L6-v2` + `go-sentex` module version).
+On startup, pages whose content hash matches the cache are re-indexed from
+the cache; changed or new pages are re-embedded. The cache auto-invalidates
+when the embedding model identity changes. It is derived data — deleting it
+is harmless, it rebuilds on next startup, and it belongs in `.gitignore`.
 
-1. Generate trigrams for each query term
-2. Find indexed terms with high trigram overlap (Jaccard similarity above a
-   threshold)
-3. Re-run BM25 with the expanded term set (original terms + fuzzy matches)
-4. Fuzzy-matched terms receive a reduced weight to prefer exact matches when
-   both are present
+**Model acquisition:** `go-sentex` loads the ONNX model from the standard
+HuggingFace Hub cache (honors `HF_HOME`). On first run with no cached model,
+it downloads ~87 MB once; subsequent runs are offline. A failed model load
+is fatal — the server exits rather than silently falling back to keyword-only
+search.
 
 ### Link Graph Boost
 
@@ -286,6 +309,27 @@ page outside the MCP (e.g. in Obsidian) without committing, the git-derived
 timestamp will reflect the last committed state rather than the actual last
 edit. The last committed state is the most recent *settled* content, which is
 the intended behavior — uncommitted changes are in-flight.
+
+---
+
+## Filesystem Watching
+
+memento runs an `fsnotify` watcher over the content directory for the lifetime
+of the server. On create/modify/delete events for `.md` files, the affected
+page is re-parsed and fed into `idx.Add` or `idx.Remove`, which updates the
+BM25, graph, and vector indexes together and writes the new embeddings through
+to the `.memento-vectors` cache.
+
+Rapid event bursts are debounced per-file (100 ms window) so that an editor
+writing via a temp-file-then-rename sequence produces a single reindex. The
+watcher does not distinguish self-triggered events (from memento's own writes)
+from external ones — the re-parse is cheap and the simplicity is worth the
+negligible cost.
+
+The watcher is always on and has no opt-in flag. If it fails to initialize
+(for example, when the OS `inotify` watch limit is exhausted), the server
+logs a warning and continues serving without live reload; the index is still
+updated on every write through the MCP tools.
 
 ---
 
@@ -708,18 +752,25 @@ Multiple memento instances can be registered under different names:
 
 ```
 memento/
-├── main.go              # CLI flags, stdio serve
+├── main.go              # CLI flags, model load, index build, watcher, stdio serve
 ├── go.mod
 ├── go.sum
+├── embed/
+│   └── model.go         # Sentence-embedding model wrapper (go-sentex, all-MiniLM-L6-v2)
 ├── index/
 │   ├── bm25.go          # BM25 inverted index with weighted field scoring
-│   ├── trigram.go        # Trigram fuzzy matching (fallback layer)
-│   ├── graph.go          # Bidirectional wikilink graph
-│   └── index.go          # Composite index (search pipeline, relevance filter)
+│   ├── chunk.go         # Page → chunks for embedding (heading / paragraph split)
+│   ├── vector.go        # In-memory flat vector index, cosine search
+│   ├── cache.go         # .memento-vectors sidecar persistence
+│   ├── trigram.go       # Trigram fuzzy matching (legacy, unused when embeddings are available)
+│   ├── graph.go         # Bidirectional wikilink graph
+│   └── index.go         # Composite index (search pipeline, merge, relevance filter)
 ├── pages/
-│   ├── store.go          # Filesystem ops (read, write, delete, scan)
-│   ├── names.go          # Page name validation, case-insensitive lookup
-│   └── parser.go         # Markdown parsing, wikilink extraction, heading extraction
+│   ├── store.go         # Filesystem ops (read, write, delete, scan)
+│   ├── names.go         # Page name validation, case-insensitive lookup
+│   └── parser.go        # Markdown parsing, wikilink extraction, heading extraction
+├── watcher/
+│   └── watcher.go       # fsnotify-based content-dir watcher with debouncing
 ├── tools/
 │   ├── search.go
 │   ├── get_page.go
@@ -743,7 +794,9 @@ memento/
 - **No access control.** The MCP assumes it is the sole writer.
 - **No validation enforcement.** Broken links and orphaned pages are tolerated.
 - **No ordering or ranking of pages** outside of search relevance.
-- **No notifications or triggers.** memento is a passive tool.
+- **No notifications or triggers to clients.** memento does not push events
+  over MCP; it watches the filesystem internally to keep its index fresh, but
+  clients only ever see tool responses.
 - **No Obsidian dependency.** Wikilink syntax is just a convention in markdown
   files. Obsidian can view the files if desired, but is not required.
 - **No disambiguation enforcement.** The MCP stores pages; skill instructions
@@ -846,12 +899,62 @@ ensures concept pages rank highest for their own name. Weighting wikilink target
 recognizes that `[[Crowd Control]]` appearing on another page is a deliberate
 declaration of relevance, stronger than the words appearing incidentally in body text.
 
-**Why fallback layers instead of merged scoring for fuzzy matching?**
-Merged scoring runs both exact BM25 and fuzzy trigram matching on every query, then
-combines scores. This adds noise when exact matching already found good results. The
-fallback approach only runs the fuzzier, noisier trigram layer when BM25 returns
-fewer than 3 results. Simpler to implement, easier to reason about, and avoids the
-tuning headache of balancing exact vs fuzzy weights.
+**Why combine BM25 and vector search instead of picking one?**
+Keyword search and semantic search fail in different ways. BM25 misses synonyms
+and paraphrases ("deployment strategy" ↛ "CICD Pipeline"). Pure vector search
+surfaces thematically-similar pages that don't contain the exact term the agent
+asked about, and loses the strong signal of a rare keyword that appears in a
+page title. Running them in parallel and merging — with vector as the semantic
+gate and BM25 as a boost on top — captures both signals. The relevance
+threshold then cuts the long tail on either side.
+
+**Why flat vector scan instead of an ANN index?**
+At the expected scale (hundreds of pages, low thousands of chunks), a brute-force
+cosine comparison across 384-dim vectors completes in under a millisecond. An
+approximate-nearest-neighbor index (HNSW, IVF) would add dependencies, recall
+loss, and build-time complexity for no perceivable latency gain. If a brain
+ever grows into the tens of thousands of chunks, swapping the flat scan for an
+ANN index is a local change behind the same `vector.Search` interface.
+
+**Why chunk pages instead of embedding the whole page?**
+`all-MiniLM-L6-v2` has a 256-token context window; a long page would be silently
+truncated, making the back half invisible to semantic search. Chunking on
+section headings also means a vector hit carries a useful line anchor, so the
+snippet can point at the paragraph that actually matched rather than the top
+of the page. Prefixing every chunk with the page's `# Title` line keeps page
+identity in the embedding so chunks don't drift free of their page.
+
+**Why a sidecar cache instead of re-embedding on every startup?**
+Embedding hundreds of pages takes several seconds even with a fast model. The
+cache makes cold start effectively free for unchanged content: only pages
+whose hash has changed are re-embedded. The cache is keyed on model identity
+(model ID + go-sentex version) so a model change transparently invalidates
+everything, preventing mixed-model drift. Keeping it as a sidecar file —
+rather than burying it in a user cache directory — makes it discoverable and
+trivially resettable by deleting it.
+
+**Why is a model-load failure fatal?**
+Semantic search is a primary part of the retrieval experience. A server that
+silently degrades to BM25-only would produce noticeably worse search results
+in a way that's hard to notice and easy to blame on the content. Failing loudly
+at startup makes the misconfiguration obvious and fixable (install the model,
+set `HF_HOME`, check network on first run).
+
+**Why watch the filesystem instead of only updating on tool writes?**
+A memento brain is a directory of plain markdown files, by design browsable
+and editable outside the MCP: in Obsidian, a text editor, a `git pull`, or
+another memento instance pointed at the same directory. Without live reload,
+external edits would be invisible to search until the server restarts — a
+foot-gun that silently degrades accuracy. Watching `fsnotify` events and
+reindexing in-place keeps the in-memory index faithful to the filesystem at
+all times, which is the stronger invariant.
+
+**Why debounce, and why per-file?**
+Many editors save by writing to a temp file and renaming, producing a burst
+of create/modify/delete events within milliseconds. Debouncing per-file
+coalesces that burst into a single reindex. Debouncing globally would delay
+independent edits to unrelated files; per-file keeps reaction time tight
+while still collapsing bursts for each individual page.
 
 **Why a relevance threshold (50% of top score)?**
 As the brain grows, a broad search might match dozens of pages. Most of those matches
@@ -927,8 +1030,10 @@ files if desired but is never required.
 Agents read and write markdown natively. Keeping the source of truth as markdown
 files means no serialization overhead and the content is readable outside of the
 MCP. The in-memory index (built on startup from the markdown files) provides fast
-search without a second representation that could drift. If scale demands it, a
-SQLite cache can be added later behind the same tool interface.
+search without a second representation that could drift. The one exception is the
+embedding vector cache (`.memento-vectors`), which is pure derived data keyed by
+content hash — it never serves as a source of truth, it only skips recomputation
+on startup, and discarding it always produces a correct index.
 
 **Why line numbers in search results and multi-range support in `get_page`?**
 This mirrors the grep-then-read pattern agents already use with source code: search
@@ -958,7 +1063,7 @@ edges — pages that exist but have been forgotten by the link structure.
 Pagination and name-only output keep token cost low even over large brains.
 
 **Why server-side search instead of exposing the raw index?**
-The search tool encapsulates ranking logic (BM25 + trigram fallback + graph boost) that
+The search tool encapsulates ranking logic (BM25 + vector merge + graph boost) that
 agents shouldn't need to reason about. The agent asks a question; the MCP returns
 ranked, contextualized results.
 

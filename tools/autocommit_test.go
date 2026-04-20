@@ -38,7 +38,7 @@ func setupTestServerAutoCommitBroken(t *testing.T) (*client.Client, string) {
 	setupBrokenGitRepo(t, dir)
 
 	store := pages.NewStore(dir)
-	idx := index.NewIndex()
+	idx := index.NewIndex(nil, "")
 
 	s := server.NewMCPServer("memento-test-autocommit-broken", "0.0.0", server.WithToolCapabilities(true))
 	tools.RegisterAutoCommit(s, store, idx, dir)
@@ -105,7 +105,7 @@ func setupTestServerAutoCommit(t *testing.T) (*client.Client, string) {
 	initGitRepo(t, dir)
 
 	store := pages.NewStore(dir)
-	idx := index.NewIndex()
+	idx := index.NewIndex(nil, "")
 
 	s := server.NewMCPServer("memento-test-autocommit", "0.0.0", server.WithToolCapabilities(true))
 	tools.RegisterAutoCommit(s, store, idx, dir)
@@ -277,7 +277,7 @@ func TestAutoCommit(t *testing.T) {
 		initGitRepo(t, dir)
 
 		store := pages.NewStore(dir)
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 
 		s := server.NewMCPServer("memento-test-no-autocommit", "0.0.0", server.WithToolCapabilities(true))
 		// Normal Register — no auto-commit.

@@ -89,7 +89,7 @@ func setupTestServerAndDir(t *testing.T) (*client.Client, *pages.Store, *index.I
 
 	dir := t.TempDir()
 	store := pages.NewStore(dir)
-	idx := index.NewIndex()
+	idx := index.NewIndex(nil, "")
 
 	s := server.NewMCPServer("memento-test-ts", "0.0.0", server.WithToolCapabilities(true))
 	tools.Register(s, store, idx)
@@ -120,7 +120,7 @@ func setupTestServerInGitDir(t *testing.T) (*client.Client, string) {
 	initGitRepo(t, dir)
 
 	store := pages.NewStore(dir)
-	idx := index.NewIndex()
+	idx := index.NewIndex(nil, "")
 
 	s := server.NewMCPServer("memento-test-gitdir-nac", "0.0.0", server.WithToolCapabilities(true))
 	tools.Register(s, store, idx)

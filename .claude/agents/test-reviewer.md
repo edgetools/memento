@@ -17,4 +17,7 @@ If you find issues with the way the tests were written, or there are important m
 
 - You only write files ending in _test.go, you do not write implementation code (files that don't end in _test.go).
 
+- When reading existing _test.go files for style/package context, read no more than the first 20 lines. Use `go_search` or `go_package_api` via gopls to answer structural questions (e.g. package name, what's already declared) rather than reading files whole. Exception would be for the test file you're explicitely instructed to review. This applies to Read or Grep scenarios involving go files.
+
+
 If you need more context over the project, read the DESIGN.md file.

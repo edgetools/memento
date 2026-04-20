@@ -16,11 +16,11 @@ Explore any time you:
 
 ## How to explore
 
-1. Pick the most specific term or phrase for what you're looking for
-2. Call `search` with that term
+1. Query with a short phrase that describes what you're looking for, in whatever words come naturally — search matches meaning, not just exact terms, so you don't need to guess the brain's vocabulary
+2. Call `search` with that phrase
 3. If results look relevant, call `get_page` to read the full page
-4. Follow `[[wikilinks]]` in retrieved pages to related content — but stop after 1–2 hops
-5. If you cannot find anything, consider using `list_pages` which can deliver a paginated list of every topic in the brain -- use this as a last resort.
+4. Follow a `[[wikilink]]` only when the linked concept is load-bearing for what you're doing — a well-scoped search usually returns the right page directly, so don't reflexively hop
+5. A zero-result search is a reliable "not documented" signal — `list_pages` is a last resort for when you need to browse the full topic list, not a fallback for missed searches
 
 ## How to use what you find
 

@@ -39,7 +39,7 @@ func setupTestServerAutoCommitSubdir(t *testing.T) (*client.Client, string, stri
 	require.NoError(t, os.MkdirAll(contentDir, 0o755))
 
 	store := pages.NewStore(contentDir)
-	idx := index.NewIndex()
+	idx := index.NewIndex(nil, "")
 
 	s := server.NewMCPServer("memento-test-subdir-autocommit", "0.0.0", server.WithToolCapabilities(true))
 	tools.RegisterAutoCommit(s, store, idx, contentDir)

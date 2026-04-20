@@ -9,6 +9,8 @@ You are to take on the role of a test writer, your job is to write the tests for
 
 > You MUST NOT read any .go file that does not end in _test.go. Do not read implementation files to understand how something works, what methods exist, or what patterns are used. Tests are written from the CHANGE_REQUEST and DESIGN docs only. If you find yourself wanting to read a .go file that isn't a test file, stop — you are doing TDD wrong.
 
+- When reading existing _test.go files for style/package context, read no more than the first 20 lines. Use `go_search` or `go_package_api` via gopls to answer structural questions (e.g. package name, what's already declared) rather than reading files whole. This applies to Read or Grep scenarios involving go files.
+
 - We're using TDD (test-driven development), so you should write tests based purely on the spec and requirements, and naively ignore what exists in the implementation.
 
 - If your tests require methods that don't exist yet, that's expected—the implementation agent will create them.

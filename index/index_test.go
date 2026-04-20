@@ -34,7 +34,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("bm25_primary", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		idx.Add(makePage("Enchanter", "The enchanter is the primary mez class.", nil))
 		idx.Add(makePage("Bard", "A support class with some mez-like songs.", nil))
 		idx.Add(makePage("Crowd Control", "Crowd control abilities include mez and root.", nil))
@@ -54,7 +54,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("trigram_fallback_fires", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		idx.Add(makePage("Enchanter", "The enchanter specializes in mesmerize spells.", nil))
 
 		// "enchaner" is "enchanter" with 't' deleted — BM25 alone should find 0 results
@@ -70,7 +70,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("trigram_fallback_skipped", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		// Three pages all matching "mez" via BM25 — fallback threshold not triggered.
 		idx.Add(makePage("Mez Basics", "Mez is crowd control that stops enemy action completely.", nil))
 		idx.Add(makePage("Mez Duration", "Mez duration depends on the caster and target level difference.", nil))
@@ -92,7 +92,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("graph_boost_linked", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		// "Crowd Control" links to "Enchanter" via wikilink.
 		idx.Add(makePage("Crowd Control",
 			"Crowd control relies on the [[Enchanter]] for primary mez duties.",
@@ -121,7 +121,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("graph_boost_direct_and_linked", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		// "Enchanter" directly mentions "mez" AND is linked from "Crowd Control".
 		idx.Add(makePage("Enchanter", "The enchanter mez class handles crowd control.", nil))
 		idx.Add(makePage("Crowd Control",
@@ -144,7 +144,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("relevance_threshold", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		// Strong match: page title IS "Enchanter" (10x weight) + body mentions it multiple times.
 		idx.Add(makePage("Enchanter",
 			"Enchanter is the primary mez class. The enchanter handles crowd control.",
@@ -168,7 +168,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("max_results", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		for i := 0; i < 8; i++ {
 			idx.Add(makePage(
 				fmt.Sprintf("Enchanter Page %d", i),
@@ -184,7 +184,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("snippet_direct_match", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		body := "Introduction to crowd control tactics.\n" +
 			"The enchanter specializes in mesmerize spells and crowd control.\n" +
 			"Other CC classes include bards and chanters."
@@ -201,7 +201,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("snippet_title_match", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		// Page whose title IS the search term — snippet should show the first paragraph.
 		firstParagraph := "The enchanter is a utility class specializing in mesmerize spells."
 		body := firstParagraph + "\n\n" +
@@ -220,7 +220,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("snippet_linked_page", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		// "Crowd Control" has a direct body match for "mez" AND links to "Enchanter".
 		idx.Add(makePage("Crowd Control",
 			"During a pull, the [[Enchanter]] is assigned to mez duty first.",
@@ -243,7 +243,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("snippet_length", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		body := "The enchanter is a utility class specializing in mesmerize spells.\n\n" +
 			"Enchanters use their powerful mez abilities to control multiple enemies at once.\n\n" +
 			"The enchanter toolkit includes stun, mez, slow, and charm effects for CC.\n\n" +
@@ -264,7 +264,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("empty_index", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 
 		assert.NotPanics(t, func() {
 			results := idx.Search("enchanter", 10)
@@ -274,7 +274,7 @@ func TestIndexSearch(t *testing.T) {
 
 	t.Run("line_numbers", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		// Construct a page where the matching content is well into the body (not line 1).
 		var bodyLines []string
 		for i := 0; i < 10; i++ {
@@ -303,7 +303,7 @@ func TestIndexBuild(t *testing.T) {
 
 	t.Run("indexes_all", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		pages := []struct {
 			name string
 			term string
@@ -333,7 +333,7 @@ func TestIndexUpdate(t *testing.T) {
 
 	t.Run("reflects_changes", func(t *testing.T) {
 		t.Parallel()
-		idx := index.NewIndex()
+		idx := index.NewIndex(nil, "")
 		// Initial content about "mesmerize".
 		idx.Add(makePage("Enchanter", "The enchanter uses mesmerize to control enemies.", nil))
 

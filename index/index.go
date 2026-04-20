@@ -1,11 +1,16 @@
 package index
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"log"
+	"maps"
 	"regexp"
 	"sort"
 	"strings"
 	"unicode"
 
+	"github.com/edgetools/memento/embed"
 	"github.com/edgetools/memento/pages"
 )
 
@@ -30,6 +35,9 @@ const (
 
 	// maxSnippetLen is the maximum snippet length in bytes.
 	maxSnippetLen = 300
+
+	// vectorMinScore is the minimum cosine similarity for a vector result to enter the merge.
+	vectorMinScore = 0.3
 )
 
 // Result is a single result from the composite Index search.
@@ -42,25 +50,43 @@ type Result struct {
 }
 
 // Index is the composite search index combining BM25, trigram fuzzy matching,
-// and a bidirectional wikilink graph for link-boost.
+// a bidirectional wikilink graph for link-boost, and an optional vector index.
 type Index struct {
-	bm25  *BM25
-	tri   *Trigram
-	graph *Graph
-	pages map[string]pages.Page // normalized name → stored page (for snippets)
+	bm25   *BM25
+	tri    *Trigram
+	graph  *Graph
+	vector *VectorIndex          // nil when no embedding model is available
+	pages  map[string]pages.Page // normalized name → stored page (for snippets)
+
+	// Cache write-through fields. cachePath == "" disables write-through.
+	model        *embed.Model
+	cachePath    string
+	cacheEntries map[string]CacheEntry // normalized page name → cached entry
 }
 
-// NewIndex creates an empty composite Index.
-func NewIndex() *Index {
-	return &Index{
-		bm25:  NewBM25(),
-		tri:   NewTrigram(),
-		graph: NewGraph(),
-		pages: make(map[string]pages.Page),
+// NewIndex creates an empty composite Index. When model is non-nil a VectorIndex
+// is created and wired in; when nil the index behaves as BM25 + trigram + graph only.
+// cachePath is the path to the .memento-vectors sidecar file used for embedding
+// write-through. An empty cachePath disables cache persistence.
+func NewIndex(model *embed.Model, cachePath string) *Index {
+	ix := &Index{
+		bm25:         NewBM25(),
+		tri:          NewTrigram(),
+		graph:        NewGraph(),
+		pages:        make(map[string]pages.Page),
+		model:        model,
+		cachePath:    cachePath,
+		cacheEntries: make(map[string]CacheEntry),
 	}
+	if model != nil {
+		ix.vector = NewVectorIndex(model)
+	}
+	return ix
 }
 
 // Add indexes a page, replacing any existing entry with the same name.
+// When a cachePath is set and a model is available, the resulting chunk
+// embeddings are written through to the cache file.
 func (ix *Index) Add(page pages.Page) {
 	key := strings.ToLower(page.Name)
 	ix.bm25.Add(page)
@@ -71,19 +97,89 @@ func (ix *Index) Add(page pages.Page) {
 	for term := range collectPageTerms(page) {
 		ix.tri.Add(term)
 	}
+
+	if ix.vector != nil {
+		ix.vector.Add(page) //nolint:errcheck // embedding errors are non-fatal
+		if ix.cachePath != "" {
+			normName := pages.Normalize(page.Name)
+			ix.cacheEntries[normName] = CacheEntry{
+				PageName:    page.Name,
+				ContentHash: pageContentHash(page),
+				Chunks:      ix.vector.chunksFor(normName),
+			}
+			ix.saveCache()
+		}
+	}
+}
+
+// AddFromCache indexes a page using pre-computed chunk vectors from the given
+// CacheEntry, bypassing the (expensive) embedding step.
+// The BM25, graph, and trigram sub-indexes are updated exactly as in Add.
+func (ix *Index) AddFromCache(page pages.Page, entry CacheEntry) {
+	key := strings.ToLower(page.Name)
+	ix.bm25.Add(page)
+	ix.graph.Add(page)
+	ix.pages[key] = page
+
+	for term := range collectPageTerms(page) {
+		ix.tri.Add(term)
+	}
+
+	if ix.vector != nil {
+		ix.vector.AddFromCache(page, entry.Chunks)
+		normName := pages.Normalize(page.Name)
+		ix.cacheEntries[normName] = entry
+	}
 }
 
 // Remove removes a page from all sub-indexes.
+// When a cachePath is set, the cache file is updated (write-through).
 func (ix *Index) Remove(name string) {
 	key := strings.ToLower(name)
 	ix.bm25.Remove(name)
 	ix.graph.Remove(name)
 	delete(ix.pages, key)
+	if ix.vector != nil {
+		ix.vector.Remove(name)
+		if ix.cachePath != "" {
+			normName := pages.Normalize(name)
+			delete(ix.cacheEntries, normName)
+			ix.saveCache()
+		}
+	}
+}
+
+// saveCache writes the current cache entries to cachePath. Errors are logged
+// but not returned — a failed cache write is non-fatal; the server continues.
+func (ix *Index) saveCache() {
+	if ix.cachePath == "" || ix.model == nil {
+		return
+	}
+	entries := make([]CacheEntry, 0, len(ix.cacheEntries))
+	for _, e := range ix.cacheEntries {
+		entries = append(entries, e)
+	}
+	if err := SaveCache(ix.cachePath, entries, ix.model.ID(), ix.model.SentexVersion(), ix.model.Dimensions()); err != nil {
+		log.Printf("index: cache write-through failed: %v", err)
+	}
+}
+
+// pageContentHash returns a short hex digest of the page's name and body,
+// used to detect content changes between runs.
+func pageContentHash(page pages.Page) string {
+	h := sha256.Sum256([]byte(page.Name + "\x00" + page.Body))
+	return hex.EncodeToString(h[:8])
 }
 
 // Search executes the full search pipeline and returns up to limit results.
 //
-// Pipeline: BM25 → (trigram fallback if <3 results) → graph boost → relevance threshold.
+// Pipeline (with vector model):
+//
+//	BM25 + vector cosine search → normalize & merge → graph boost → relevance threshold.
+//
+// Pipeline (nil model, backward-compatible):
+//
+//	BM25 → trigram fallback if <3 results → graph boost → relevance threshold.
 func (ix *Index) Search(query string, limit int) []Result {
 	if query == "" || len(ix.pages) == 0 {
 		return nil
@@ -97,24 +193,40 @@ func (ix *Index) Search(query string, limit int) []Result {
 	// Layer 1: BM25 keyword search.
 	bm25Raw := ix.bm25.searchTerms(queryTerms, 0)
 
-	// Layer 2: trigram fallback when BM25 returns too few results.
-	if len(bm25Raw) < trigramMinResults {
+	// Layer 2: vector search (model present) or trigram fallback (nil model).
+	var vecResults []VectorResult
+	if ix.vector != nil {
+		vecResults = ix.runVectorSearch(query)
+	} else if len(bm25Raw) < trigramMinResults {
 		expanded := ix.expandTerms(queryTerms)
 		if len(expanded) > len(queryTerms) {
 			bm25Raw = ix.bm25.searchTerms(expanded, 0)
 		}
 	}
 
-	// Build direct-match score map.
-	directScores := make(map[string]float64, len(bm25Raw))
+	// Layer 3: build direct-match score map, merging BM25 and vector when available.
+	bm25Scores := make(map[string]float64, len(bm25Raw))
 	for _, r := range bm25Raw {
-		directScores[r.Name] = r.Score
+		bm25Scores[r.Name] = r.Score
 	}
 
-	// Layer 3: graph boost — add linked pages and boost doubly-connected pages.
+	// vecLineHints maps canonical page name → best-chunk start line from vector results.
+	vecLineHints := make(map[string]int, len(vecResults))
+	for _, vr := range vecResults {
+		vecLineHints[vr.Page] = vr.Line
+	}
+
+	var directScores map[string]float64
+	if ix.vector != nil {
+		directScores = ix.mergeScores(bm25Scores, vecResults)
+	} else {
+		directScores = bm25Scores
+	}
+
+	// Layer 4: graph boost — add linked pages and boost doubly-connected pages.
 	finalScores, referrers := ix.graphBoost(directScores)
 
-	// Relevance threshold: drop results below 50% of the top score.
+	// Layer 5: relevance threshold — drop results below 50% of the top score.
 	topScore := 0.0
 	for _, s := range finalScores {
 		if s > topScore {
@@ -146,7 +258,7 @@ func (ix *Index) Search(query string, limit int) []Result {
 		ranked = ranked[:limit]
 	}
 
-	// Build results with snippets.
+	// Layer 6: build results with snippets.
 	results := make([]Result, 0, len(ranked))
 	for _, e := range ranked {
 		key := strings.ToLower(e.name)
@@ -154,9 +266,21 @@ func (ix *Index) Search(query string, limit int) []Result {
 		if !ok {
 			continue
 		}
-		isDirect := directScores[e.name] > 0
+
+		bm25Hit := bm25Scores[e.name] > 0
+		_, vecHit := vecLineHints[e.name]
+		isDirect := bm25Hit || (ix.vector != nil && vecHit)
 		referrer := referrers[e.name]
-		snippet, line := ix.buildSnippet(page, queryTerms, isDirect, referrer)
+
+		var snippet string
+		var line int
+		if !bm25Hit && vecHit {
+			// Vector-only match: anchor snippet on the best-matching chunk's line.
+			snippet, line = vectorSnippet(page, vecLineHints[e.name])
+		} else {
+			snippet, line = ix.buildSnippet(page, queryTerms, isDirect, referrer)
+		}
+
 		results = append(results, Result{
 			Page:     e.name,
 			Score:    e.score,
@@ -166,6 +290,91 @@ func (ix *Index) Search(query string, limit int) []Result {
 		})
 	}
 	return results
+}
+
+// runVectorSearch runs the vector index search and filters out low-similarity results.
+func (ix *Index) runVectorSearch(query string) []VectorResult {
+	raw := ix.vector.Search(query, 20)
+	out := make([]VectorResult, 0, len(raw))
+	for _, vr := range raw {
+		if vr.Score >= vectorMinScore {
+			out = append(out, vr)
+		}
+	}
+	return out
+}
+
+// mergeScores builds the direct-match score map from BM25 and vector results.
+//
+// Vector is the semantic gate: only pages found by vector (score ≥ 0.3,
+// already filtered by runVectorSearch) enter the merged set. BM25 provides
+// a score boost for pages that appear in both pipelines. Pages found only by
+// BM25 (no vector support) are excluded — a coincidental keyword match in a
+// semantically unrelated page should not survive when the model is present.
+//
+// When vector returns no results, BM25 scores pass through normalized so that
+// keyword-only searches still work.
+func (ix *Index) mergeScores(bm25Scores map[string]float64, vecResults []VectorResult) map[string]float64 {
+	// No vector results: normalize BM25 and pass through.
+	if len(vecResults) == 0 {
+		bm25Top := 0.0
+		for _, s := range bm25Scores {
+			bm25Top = max(bm25Top, s)
+		}
+		merged := make(map[string]float64, len(bm25Scores))
+		for name, s := range bm25Scores {
+			if bm25Top > 0 {
+				merged[name] = s / bm25Top
+			} else {
+				merged[name] = s
+			}
+		}
+		return merged
+	}
+
+	// Vector has results: find top scores for normalization.
+	bm25Top := 0.0
+	for _, s := range bm25Scores {
+		bm25Top = max(bm25Top, s)
+	}
+	vecTop := 0.0
+	for _, vr := range vecResults {
+		vecTop = max(vecTop, vr.Score)
+	}
+
+	// Build merged set from vector results only, boosting with BM25 where available.
+	merged := make(map[string]float64, len(vecResults))
+	for _, vr := range vecResults {
+		normVec := vr.Score
+		if vecTop > 0 {
+			normVec = vr.Score / vecTop
+		}
+		normBM25 := 0.0
+		if s, ok := bm25Scores[vr.Page]; ok && bm25Top > 0 {
+			normBM25 = s / bm25Top
+		}
+		merged[vr.Page] = max(normVec, normBM25)
+	}
+	return merged
+}
+
+// vectorSnippet extracts a snippet anchored at lineHint (1-indexed page line)
+// from the page body. Falls back to the first paragraph if the anchor is empty.
+func vectorSnippet(page pages.Page, lineHint int) (string, int) {
+	lines := strings.Split(page.Body, "\n")
+	if len(lines) == 0 {
+		return "", lineHint
+	}
+	// lineHint is a 1-indexed page line; body[0] is page line 2.
+	bodyIdx := max(0, min(lineHint-2, len(lines)-1))
+	start := max(0, bodyIdx-1)
+	end := min(len(lines), bodyIdx+2)
+	snippet := truncateSnippet(strings.TrimSpace(strings.Join(lines[start:end], " ")))
+	if snippet != "" {
+		return snippet, lineHint
+	}
+	// Fallback: first paragraph.
+	return firstParagraphSnippet(page)
 }
 
 // expandTerms expands query terms using trigram fuzzy matching.
@@ -194,9 +403,7 @@ func (ix *Index) graphBoost(direct map[string]float64) (map[string]float64, map[
 	referrers := make(map[string]string)
 
 	// Seed with direct scores.
-	for name, score := range direct {
-		final[name] = score
-	}
+	maps.Copy(final, direct)
 
 	// For each direct match, traverse one hop in both directions.
 	for srcName, srcScore := range direct {
@@ -271,14 +478,8 @@ func referrerSnippet(refPage pages.Page, targetName string) (string, int) {
 	}
 
 	// Expand ~125 chars on each side of the match.
-	snipStart := loc[0] - 125
-	if snipStart < 0 {
-		snipStart = 0
-	}
-	snipEnd := loc[1] + 125
-	if snipEnd > len(body) {
-		snipEnd = len(body)
-	}
+	snipStart := max(0, loc[0]-125)
+	snipEnd := min(len(body), loc[1]+125)
 
 	snippet := body[snipStart:snipEnd]
 	if snipStart > 0 {
@@ -296,12 +497,7 @@ func referrerSnippet(refPage pages.Page, targetName string) (string, int) {
 // firstParagraphSnippet returns the first paragraph of the page body and line 2.
 func firstParagraphSnippet(page pages.Page) (string, int) {
 	body := strings.TrimSpace(page.Body)
-	idx := strings.Index(body, "\n\n")
-	firstPara := body
-	if idx >= 0 {
-		firstPara = body[:idx]
-	}
-	// Also split on single newlines and take the first non-empty block.
+	firstPara, _, _ := strings.Cut(body, "\n\n")
 	firstPara = strings.TrimSpace(firstPara)
 	return truncateSnippet(firstPara), 2
 }
@@ -323,14 +519,8 @@ func densitySnippet(page pages.Page, queryTerms []string) (string, int) {
 	}
 
 	// Extract the best line with one line of context on each side.
-	start := bestIdx - 1
-	if start < 0 {
-		start = 0
-	}
-	end := bestIdx + 2
-	if end > len(lines) {
-		end = len(lines)
-	}
+	start := max(0, bestIdx-1)
+	end := min(len(lines), bestIdx+2)
 	snippet := strings.Join(lines[start:end], " ")
 	return truncateSnippet(snippet), bestIdx + 2 // +2: heading is line 1, body starts at line 2
 }
